@@ -1,0 +1,95 @@
+Jetson Orin Nano — CUDA + PyTorch Status
+=========================================
+Date: 2026-04-11
+
+STATUS: WORKING
+================
+
+SYSTEM INFO
+-----------
+Board:        Jetson Orin Nano Developer Kit
+L4T:          R36.5.0 (JetPack 6.2)
+Kernel:       5.15.185-tegra (aarch64)
+Python:       3.10.12
+Driver:       540.5.0
+CUDA (driver): 12.6
+cuDNN:        9.3.0 (libcudnn9-cuda-12)
+cublas:       12.6.1.4 (libcublas-12-6)
+nvtoolsext:   installed (libnvtoolsext1)
+
+INSTALLED PYTORCH
+-----------------
+torch:          2.9.1       (from pypi.jetson-ai-lab.io/jp6/cu126/, --no-deps)
+torchvision:    0.24.1      (from pypi.jetson-ai-lab.io/jp6/cu126/, --no-deps)
+nvidia-cudss:   0.7.1.6     (from PyPI, --no-deps)
+CUDA arch list: ['sm_87']   (Orin-native)
+torch.version.cuda: 12.6
+
+GPU CHECK RESULT
+-----------------
+PyTorch: 2.9.1
+CUDA available: True
+Device: Orin
+Matrix multiply 2048x2048: ~20-30 ms
+GPU is working correctly.
+
+THE FIX (what changed)
+-----------------------
+1. Uninstalled torch 2.11.0+cu126 from standard PyPI (had [sm_80, sm_90], excluded sm_87)
+2. Uninstalled all nvidia-*-cu12 pip packages (conflicted with system CUDA)
+3. Installed torch 2.9.1 from Jetson AI Lab index (has sm_87 kernels)
+4. Installed torchvision 0.24.1 from same index
+5. Installed nvidia-cudss-cu12 from PyPI (only missing system lib)
+6. Installed cuda-cupti-12-6 via apt (system package, was missing)
+7. Updated LD_LIBRARY_PATH to include all three lib directories
+
+KEY INSIGHT: The standard PyPI torch wheels (even cu126 ones) are built with
+arch list [sm_80, sm_90] and explicitly exclude sm_87. The Jetson AI Lab
+index (pypi.jetson-ai-lab.io/jp6/cu126/) has wheels built with sm_87 for
+the Orin GPU. Must use --no-deps to avoid pulling in conflicting nvidia pip
+packages.
+
+LIBRARY PATH FIX (in ~/.bashrc)
+---------------------------------
+export LD_LIBRARY_PATH=/home/jetson/.local/lib/python3.10/site-packages/nvidia/cu12/lib:/usr/local/cuda-12.6/targets/aarch64-linux/lib:/usr/local/cuda-12.6/lib64:$LD_LIBRARY_PATH
+
+WHAT WE TRIED (history)
+-------------------------
+
+1. NVIDIA Forum wheel (torch 2.3.0)
+   - Built for JP 6.0, needs cuDNN 8 -> FAILED (JP 6.2 has cuDNN 9 only)
+
+2. Jetson AI Lab wheel (torch 2.11.0)
+   - Actually built for CUDA 13.0 despite cu126 URL -> FAILED (driver too old)
+
+3. Standard PyPI wheel (torch 2.11.0+cu126)
+   - Arch list [sm_80, sm_90], excludes sm_87 -> FAILED (no kernel image)
+
+4. Jetson AI Lab wheel (torch 2.9.1) + system CUDA 12.6
+   - Arch list [sm_87], CUDA 12.6 -> WORKS
+
+PHASE 0 VERIFICATION STATUS (non-GPU items)
+--------------------------------------------
+0.1 INA3221 Power Monitor:  PASS
+    - hwmon path: /sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon1/
+    - Channels: VDD_IN, VDD_CPU_GPU_CV, VDD_SOC (voltage + current readable)
+    - tegrastats: reports power in mW at 1Hz
+
+0.2 CUDA FLOP Profiling:    READY TO TEST
+    - ncu installed: v2021.3.1.0
+    - GPU compute now working -- can test profiling
+
+0.3 Network Traffic Monitor: PASS
+    - tcpdump: v4.99.1
+    - tc: iproute2-5.15.0
+    - WiFi (wlP1p1s0): UP
+
+0.4 GPS:                     SKIPPED (hardware not attached)
+
+Other:
+    - redteam user: uid=1001, exists, home dir locked (700)
+    - Flask: OK
+    - Scapy: OK
+    - Requests: OK
+    - SQLite: OK
+    - LD_LIBRARY_PATH fix applied and in .bashrc

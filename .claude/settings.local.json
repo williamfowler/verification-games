@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(pip3 show:*)",
+      "Read(//etc/**)",
+      "Bash(dpkg -l)",
+      "Bash(docker --version)",
+      "Bash(nvcc --version)",
+      "Read(//usr/local/cuda-12.6/bin/**)",
+      "Bash(pip3 index:*)",
+      "Bash(apt-cache policy:*)",
+      "Bash(pip3 install:*)",
+      "Bash(pip3 uninstall:*)",
+      "Bash(apt-cache search:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(ldd /home/jetson/.local/lib/python3.10/site-packages/torch/lib/libtorch_cuda.so)",
+      "Bash(pip3 search:*)"
+    ]
+  }
+}
