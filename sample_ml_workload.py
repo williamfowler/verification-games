@@ -1,5 +1,5 @@
 """
-redteam_sim.py — Red Team Workload Simulator
+sample_ml_workload.py — Red Team Workload Simulator
 ============================================
 Simulates a transformer training workload on the Jetson GPU and emits a
 ground truth FLOP count for comparison against the blue team monitor.
