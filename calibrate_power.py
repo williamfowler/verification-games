@@ -38,18 +38,35 @@ COOLDOWN_S      = 45    # quiet sampling between workloads
 
 # ── Workload matrix ───────────────────────────────────────────────────────────
 # d_model spans memory-bound (128) to compute-bound (1024) on the Orin Nano.
-# Steps are sized so each run lasts ≥ 150 s → ≥ 300 power samples.
-# d_model=1024 is included but will be skipped if it OOMs.
+# Steps sized for ~150 s of active training per run (≥300 power samples) based
+# on observed step rates (~21 steps/s at d_model=128, ~7 steps/s at d_model=1024).
+# d_model=1024 is included but will be skipped gracefully if it OOMs.
 CONFIGS = [
-    {"d_model": 128,  "steps": 600, "batch_size": 8, "seq_len": 64},
-    {"d_model": 256,  "steps": 500, "batch_size": 8, "seq_len": 64},
-    {"d_model": 512,  "steps": 300, "batch_size": 8, "seq_len": 64},
-    {"d_model": 1024, "steps": 100, "batch_size": 8, "seq_len": 64},
+    {"d_model": 128,  "steps": 3000, "batch_size": 8, "seq_len": 64},
+    {"d_model": 256,  "steps": 2500, "batch_size": 8, "seq_len": 64},
+    {"d_model": 512,  "steps": 1500, "batch_size": 8, "seq_len": 64},
+    {"d_model": 1024, "steps": 500,  "batch_size": 8, "seq_len": 64},
 ]
 
 DEFAULT_OUTPUT  = "calibration_results.txt"
 WORKLOAD_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "sample_ml_workload.py")
+
+
+# ── Python interpreter ────────────────────────────────────────────────────────
+
+def find_venv_python():
+    """
+    Prefer the .venv Python over sys.executable. When the script is invoked via
+    sudo, sys.executable is the system Python which lacks the bundled CUDA libs
+    that the venv torch ships with.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for name in ("python3", "python"):
+        p = os.path.join(script_dir, ".venv", "bin", name)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return sys.executable
 
 
 # ── INA3221 helpers ───────────────────────────────────────────────────────────
@@ -205,7 +222,7 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     stdout is echoed live; power is collected by a background thread.
     """
     cmd = [
-        sys.executable, WORKLOAD_SCRIPT,
+        find_venv_python(), WORKLOAD_SCRIPT,
         "--steps",      str(config["steps"]),
         "--batch-size", str(config["batch_size"]),
         "--seq-len",    str(config["seq_len"]),
@@ -214,22 +231,31 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     print(f"  Launching: {' '.join(cmd[2:])}", flush=True)
 
     proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
 
-    sampler = PowerSampler(volt_path, curr_path, ts_proc)
-    sampler.start()
-    t_start = time.monotonic()
+    # Power sampling starts only after "[redteam] Starting workload..." so that
+    # CUDA init, model creation, the warmup pass, and the FLOPs probe are all
+    # excluded from the energy integral (they are not in the GT FLOP count).
+    sampler = None
+    t_start = None
 
-    # Stream stdout live while process runs
     output_lines = []
     for line in proc.stdout:
         print(line, end="", flush=True)
         output_lines.append(line)
+        if sampler is None and "[redteam] Starting workload" in line:
+            t_start = time.monotonic()
+            sampler = PowerSampler(volt_path, curr_path, ts_proc)
+            sampler.start()
     proc.wait()
 
-    sampler.stop()
-    duration_s  = time.monotonic() - t_start
+    if sampler is not None:
+        sampler.stop()
+        duration_s = time.monotonic() - t_start
+    else:
+        duration_s = 0.0
+        sampler = PowerSampler(volt_path, curr_path, ts_proc)  # empty sampler
     stdout_text = "".join(output_lines)
     gt_tflops   = parse_ground_truth_tflops(stdout_text)
 
@@ -303,7 +329,7 @@ def write_report(idle_samples, run_results, idle_baseline_mw, output_path):
               f"  exit={r['returncode']}")
             w(f"    Duration          : {r['duration_s']:.1f} s")
             w(f"    Power samples     : {r['n_power_samples']}"
-              f"  (target ≥ {int(r['duration_s']/POLL_S)})")
+              f"  (active training only, excl. CUDA init)")
             w(f"    Idle baseline     : {r['idle_baseline_mw']:.1f} mW")
             if r["avg_raw_mw"] is not None:
                 w(f"    Avg raw power     : {r['avg_raw_mw']:.1f} mW")
@@ -418,6 +444,13 @@ def main():
                         help="Output .txt file path (default: calibration_results.txt)")
     args = parser.parse_args()
 
+    if os.geteuid() == 0:
+        print("ERROR: do not run as root. The INA3221 sysfs files are "
+              "world-readable (perm=444) and CUDA is only accessible to "
+              "the regular user. Run without sudo:")
+        print("  python3 calibrate_power.py [--output FILE]")
+        sys.exit(1)
+
     # Sanity checks
     volt_path, curr_path = find_ina3221_paths()
     if volt_path is None:
@@ -440,7 +473,7 @@ def main():
     # Verify sensor is readable
     test_mw = read_power_mw(volt_path, curr_path)
     if test_mw is None:
-        print("ERROR: failed to read INA3221 — check permissions (run as root?).")
+        print("ERROR: failed to read INA3221 — check that the hwmon sysfs path exists.")
         stop_tegrastats(ts_proc)
         sys.exit(1)
     print(f"Sensor test    : {test_mw:.1f} mW  OK")

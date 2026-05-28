@@ -35,13 +35,24 @@ INA3221_DRIVER = "/sys/bus/i2c/drivers/ina3221/1-0040/hwmon"
 INA3221_LABEL  = "VDD_CPU_GPU_CV"
 
 # Power-based FLOP calibration (empirical, Orin Nano, TinyTransformer workloads).
-# The detector now integrates net energy directly and converts joules -> TFLOPs.
-# These constants should be refit after collecting a larger validation matrix.
-FALLBACK_IDLE_POWER_MW = 620.0
-POWER_CAL_LOW_J_PER_TFLOP  = 8.1
-POWER_CAL_HIGH_J_PER_TFLOP = 5.9
-POWER_CAL_LOW_NET_W        = 1.0
-POWER_CAL_HIGH_NET_W       = 4.0
+# Calibrated 2026-05-28 via calibrate_power.py (power sampled from "Starting
+# workload..." to process exit, excluding CUDA init and warmup from energy).
+# batch=8, seq=64 across four d_model configs:
+#
+#   d_model=128  (0.91 W net, 43.3% GPU util, 140 samples) → 10.70 J/TFLOP  ✓ reliable
+#   d_model=256  (1.60 W net, 58.7% GPU util, 108 samples) →  6.61 J/TFLOP  ✓ reliable
+#   d_model=512  (4.99 W net, 58.4% GPU util,  32 samples) →  3.41 J/TFLOP  ⚠ short run
+#   d_model=1024 (3.71 W net, 33.0% GPU util,   3 samples) →  0.15 J/TFLOP  ✗ invalid
+#
+# d_model=1024 is invalid (pipe-buffer race: subprocess finished before the
+# parent triggered the power sampler). d_model=512 may be partially affected.
+# LOW is the mean of the two reliable runs; HIGH uses d_model=512 alone.
+# Re-run calibrate_power.py after fixing the stdout-trigger race for HIGH.
+FALLBACK_IDLE_POWER_MW = 523.0
+POWER_CAL_LOW_J_PER_TFLOP  = 8.66
+POWER_CAL_HIGH_J_PER_TFLOP = 3.41
+POWER_CAL_LOW_NET_W        = 1.6
+POWER_CAL_HIGH_NET_W       = 5.0
 
 ACTIVE_GPU_UTIL_THRESHOLD = 5.0
 START_ACTIVE_POLLS = 2
