@@ -221,14 +221,24 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     Launch sample_ml_workload.py, sample power in parallel, return result dict.
     stdout is echoed live; power is collected by a background thread.
     """
+    # "-u" forces the child's stdout unbuffered. Without it, piped stdout is
+    # block-buffered and the "[redteam] Starting workload..." trigger below does
+    # not reach this parent until the buffer flushes (near exit for short runs),
+    # starting the power sampler far too late — the race that corrupted the
+    # original calibration (only 3-32 samples on shorter runs).
     cmd = [
-        find_venv_python(), WORKLOAD_SCRIPT,
+        find_venv_python(), "-u", WORKLOAD_SCRIPT,
         "--steps",      str(config["steps"]),
         "--batch-size", str(config["batch_size"]),
         "--seq-len",    str(config["seq_len"]),
         "--d-model",    str(config["d_model"]),
     ]
-    print(f"  Launching: {' '.join(cmd[2:])}", flush=True)
+    for key, flag in (("num_layers", "--num-layers"),
+                      ("nhead", "--nhead"),
+                      ("dim_feedforward", "--dim-feedforward")):
+        if key in config:
+            cmd += [flag, str(config[key])]
+    print(f"  Launching: {' '.join(cmd[3:])}", flush=True)
 
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -237,11 +247,13 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     # Power sampling starts only after "[redteam] Starting workload..." so that
     # CUDA init, model creation, the warmup pass, and the FLOPs probe are all
     # excluded from the energy integral (they are not in the GT FLOP count).
+    # Read via readline (not `for line in proc.stdout`) to avoid the iterator's
+    # read-ahead buffering, which would also delay the trigger.
     sampler = None
     t_start = None
 
     output_lines = []
-    for line in proc.stdout:
+    for line in iter(proc.stdout.readline, ""):
         print(line, end="", flush=True)
         output_lines.append(line)
         if sampler is None and "[redteam] Starting workload" in line:

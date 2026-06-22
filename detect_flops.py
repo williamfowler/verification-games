@@ -34,25 +34,36 @@ DB_PATH = "/var/log/flop_log.db"
 INA3221_DRIVER = "/sys/bus/i2c/drivers/ina3221/1-0040/hwmon"
 INA3221_LABEL  = "VDD_CPU_GPU_CV"
 
-# Power-based FLOP calibration (empirical, Orin Nano, TinyTransformer workloads).
-# Calibrated 2026-05-28 via calibrate_power.py (power sampled from "Starting
-# workload..." to process exit, excluding CUDA init and warmup from energy).
-# batch=8, seq=64 across four d_model configs:
+# Power-based FLOP calibration (empirical, Orin Nano, transformer workloads).
 #
-#   d_model=128  (0.91 W net, 43.3% GPU util, 140 samples) → 10.70 J/TFLOP  ✓ reliable
-#   d_model=256  (1.60 W net, 58.7% GPU util, 108 samples) →  6.61 J/TFLOP  ✓ reliable
-#   d_model=512  (4.99 W net, 58.4% GPU util,  32 samples) →  3.41 J/TFLOP  ⚠ short run
-#   d_model=1024 (3.71 W net, 33.0% GPU util,   3 samples) →  0.15 J/TFLOP  ✗ invalid
+# Model: net active energy splits into a fixed active-overhead term and a term
+# proportional to useful FLOPs:
 #
-# d_model=1024 is invalid (pipe-buffer race: subprocess finished before the
-# parent triggered the power sampler). d_model=512 may be partially affected.
-# LOW is the mean of the two reliable runs; HIGH uses d_model=512 alone.
-# Re-run calibrate_power.py after fixing the stdout-trigger race for HIGH.
+#     E_net = POWER_OVERHEAD_W * t_active + E_MARGINAL_J_PER_TFLOP * TFLOPs
+#
+# so   TFLOPs = (E_net - POWER_OVERHEAD_W * t_active) / E_MARGINAL_J_PER_TFLOP.
+#
+# This replaces the old 1-D J/TFLOP-vs-power interpolation, which conflated two
+# effects: small workloads look inefficient only because fixed overhead is a
+# large fraction of their energy, not because their marginal J/TFLOP differs.
+# The two parameters are fit by least squares over a sweep of transformer
+# configs in eval_power_monitor.py (E_net = a*TFLOPs + b*t_active → a, b).
+#
+# Fit 2026-06-22 via eval_power_monitor.py over 9 transformer configs (6 train /
+# 3 held-out test), d_model 128->768 with batch/seq/layer variation, ~57-190
+# power samples per run. Objective: minimax relative FLOP error. Results:
+#   held-out (TEST) max err 6.39% ; all 9 workloads max err 9.30% (< 10% target).
+# Constants below are the SHIP fit (refit on all 9 runs). The 2-param model is
+# near capacity for this workload set — the low-intensity d128 and d256 runs pull
+# in opposite directions, so the margin to 10% is only ~0.7%. Re-fit and paste
+# the recommended block from eval_power_monitor.py to recalibrate.
+#
+# FALLBACK_IDLE_POWER_MW is the live daemon's default idle baseline (523 mW from
+# the clean 2026-05-28 idle measurement). The model was fit against net power
+# above a *per-workload* idle median; on a busy host, prefer measuring idle.
 FALLBACK_IDLE_POWER_MW = 523.0
-POWER_CAL_LOW_J_PER_TFLOP  = 8.66
-POWER_CAL_HIGH_J_PER_TFLOP = 3.41
-POWER_CAL_LOW_NET_W        = 1.6
-POWER_CAL_HIGH_NET_W       = 5.0
+POWER_OVERHEAD_W         = 0.197
+E_MARGINAL_J_PER_TFLOP   = 11.41
 
 ACTIVE_GPU_UTIL_THRESHOLD = 5.0
 START_ACTIVE_POLLS = 2
@@ -154,33 +165,41 @@ def init_db(db_path):
 
 
 def current_idle_baseline_mw(quiet_power_samples):
+    # Use the calibration baseline for repeatable run-to-run estimates. The
+    # live quiet samples remain useful diagnostics, but letting them redefine
+    # idle between workloads makes identical runs hard to compare.
+    return FALLBACK_IDLE_POWER_MW
+
+
+def observed_idle_baseline_mw(quiet_power_samples):
     if len(quiet_power_samples) >= IDLE_BASELINE_MIN_SAMPLES:
         return median(quiet_power_samples)
     return FALLBACK_IDLE_POWER_MW
 
 
-def calibrated_j_per_tflop(avg_net_power_w):
+def estimate_tflops(net_energy_j, active_time_s,
+                    p_overhead_w=POWER_OVERHEAD_W,
+                    e_marginal_j_per_tflop=E_MARGINAL_J_PER_TFLOP):
     """
-    Smoothly interpolate empirical energy/FLOP calibration by workload intensity.
-    Low-power transformer runs were less efficient; high-power runs were closer
-    to the device's compute sweet spot.
+    2-parameter active-energy model — the single canonical FLOP estimator,
+    shared by the live daemon and eval_power_monitor.py.
+
+        TFLOPs = (E_net - p_overhead_w * t_active) / e_marginal_j_per_tflop
+
+    Subtracts the fixed active-overhead energy (power drawn while a workload is
+    resident but not attributable to useful FLOPs) before converting the
+    remaining energy at the marginal J/TFLOP rate. Params are overridable so the
+    eval can score candidate fits through this exact code path.
+
+    Returns estimated TFLOPs, or None when inputs are non-positive or the
+    overhead term swamps the measured energy (no useful compute detected).
     """
-    if avg_net_power_w <= POWER_CAL_LOW_NET_W:
-        return POWER_CAL_LOW_J_PER_TFLOP
-    if avg_net_power_w >= POWER_CAL_HIGH_NET_W:
-        return POWER_CAL_HIGH_J_PER_TFLOP
-
-    span = POWER_CAL_HIGH_NET_W - POWER_CAL_LOW_NET_W
-    weight = (avg_net_power_w - POWER_CAL_LOW_NET_W) / span
-    return (POWER_CAL_LOW_J_PER_TFLOP
-            + weight * (POWER_CAL_HIGH_J_PER_TFLOP - POWER_CAL_LOW_J_PER_TFLOP))
-
-
-def power_tflops_from_energy(net_energy_j, avg_net_power_w):
-    if net_energy_j <= 0 or avg_net_power_w <= 0:
-        return None, None
-    j_per_tflop = calibrated_j_per_tflop(avg_net_power_w)
-    return net_energy_j / j_per_tflop, j_per_tflop
+    if net_energy_j <= 0 or active_time_s <= 0 or e_marginal_j_per_tflop <= 0:
+        return None
+    flop_energy_j = net_energy_j - p_overhead_w * active_time_s
+    if flop_energy_j <= 0:
+        return None
+    return flop_energy_j / e_marginal_j_per_tflop
 
 
 def parse_emc_util(line):
@@ -309,6 +328,7 @@ def run_background_monitor(poll_interval=1.5):
             "idle_baseline_mw": idle_baseline_mw,
             "roofline_tflops": 0.0,
             "net_energy_j": 0.0,
+            "active_time_s": 0.0,
             "peak_util": 0.0,
             "poll_count": 0,
             "power_sum": 0.0,
@@ -319,7 +339,9 @@ def run_background_monitor(poll_interval=1.5):
             "freq_sum_mhz": 0.0,
         })
         print("\n[!] NEW WORKLOAD DETECTED")
-        print(f"    Idle baseline : {idle_baseline_mw:.0f} mW"
+        observed_idle_mw = observed_idle_baseline_mw(quiet_power_samples)
+        print(f"    Idle baseline : {idle_baseline_mw:.0f} mW calibrated"
+              f" | observed quiet median: {observed_idle_mw:.0f} mW"
               f" ({len(quiet_power_samples)} quiet samples)")
 
     def finish_session(timestamp, now_mono, power_mw):
@@ -331,12 +353,11 @@ def run_background_monitor(poll_interval=1.5):
                         if session["emc_count"] else None)
         avg_freq_mhz = session["freq_sum_mhz"] / poll_count if poll_count else None
 
-        power_est_tflops = None
-        j_per_tflop = None
-        if avg_net_power_mw is not None:
-            power_est_tflops, j_per_tflop = power_tflops_from_energy(
-                session["net_energy_j"], avg_net_power_mw / 1000.0
-            )
+        power_est_tflops = estimate_tflops(
+            session["net_energy_j"], session["active_time_s"]
+        )
+        j_per_tflop = (session["net_energy_j"] / power_est_tflops
+                       if power_est_tflops else None)
 
         conn.execute(
             "INSERT INTO workload_sessions"
@@ -430,9 +451,13 @@ def run_background_monitor(poll_interval=1.5):
                         net_power_w = net_power_mw / 1000.0
                         net_energy_delta_j = net_power_w * dt_sec
                         session["net_energy_j"] += net_energy_delta_j
-                        if net_power_w > 0:
-                            j_per_tflop = calibrated_j_per_tflop(net_power_w)
-                            power_tflops_delta = net_energy_delta_j / j_per_tflop
+                        # Per-poll FLOP energy after removing this interval's
+                        # share of fixed active overhead. Summing these deltas
+                        # equals estimate_tflops() over the whole session; an
+                        # individual delta may be negative on near-idle polls.
+                        flop_energy_delta_j = (net_energy_delta_j
+                                               - POWER_OVERHEAD_W * dt_sec)
+                        power_tflops_delta = flop_energy_delta_j / E_MARGINAL_J_PER_TFLOP
 
                         session["power_sum"] += power_mw
                         session["net_power_sum"] += net_power_mw
@@ -440,17 +465,18 @@ def run_background_monitor(poll_interval=1.5):
 
                     session["peak_util"] = max(session["peak_util"], gpu_util)
                     session["poll_count"] += 1
+                    session["active_time_s"] += dt_sec
                     session["freq_sum_mhz"] += cur_freq_hz / 1e6
                     if emc_util is not None:
                         session["emc_sum"] += emc_util
                         session["emc_count"] += 1
 
-                    avg_net_power_w_so_far = (
-                        (session["net_power_sum"] / session["poll_count"]) / 1000.0
-                        if session["poll_count"] else 0.0
+                    power_est_so_far = estimate_tflops(
+                        session["net_energy_j"], session["active_time_s"]
                     )
-                    power_est_so_far, j_per_tflop_so_far = power_tflops_from_energy(
-                        session["net_energy_j"], avg_net_power_w_so_far
+                    j_per_tflop_so_far = (
+                        session["net_energy_j"] / power_est_so_far
+                        if power_est_so_far else None
                     )
 
                     conn.execute(
@@ -483,7 +509,7 @@ def run_background_monitor(poll_interval=1.5):
                         print(f"Roofline diagnostic: {estimated_tflops:.3f} TFLOPS  [EMC unavailable]")
                     if power_est_so_far is not None:
                         print(f"Power estimate     : {power_est_so_far:.4f} TFLOPs"
-                              f"  ({j_per_tflop_so_far:.2f} J/TFLOP calibration)")
+                              f"  ({j_per_tflop_so_far:.2f} J/TFLOP effective)")
                     print(f"Roofline diagnostic total: {session['roofline_tflops']:.4f} TFLOPs")
 
                 elif active_workload_tracked and quiet_poll_streak >= STOP_QUIET_POLLS:
@@ -494,10 +520,12 @@ def run_background_monitor(poll_interval=1.5):
 
                 elif not active_workload_tracked:
                     idle_baseline_mw = current_idle_baseline_mw(quiet_power_samples)
+                    observed_idle_mw = observed_idle_baseline_mw(quiet_power_samples)
                     power_str = f" | power={power_mw:.0f}mW" if power_mw is not None else ""
                     print(f"[quiet] gpu={gpu_util:.1f}% | emc={emc_util}%"
                           f" | freq={cur_freq_hz/1e6:.0f}MHz"
-                          f" | idle_base={idle_baseline_mw:.0f}mW{power_str}"
+                          f" | idle_base={idle_baseline_mw:.0f}mW"
+                          f" | observed_idle={observed_idle_mw:.0f}mW{power_str}"
                           f" | active_streak={active_poll_streak}/{START_ACTIVE_POLLS}")
 
                 time.sleep(poll_interval)

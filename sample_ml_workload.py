@@ -54,15 +54,20 @@ def count_flops_per_step(model, batch_size, seq_len, d_model, device):
     return counter.get_total_flops()
 
 
-def run_training(steps, batch_size, seq_len, d_model):
+def run_training(steps, batch_size, seq_len, d_model,
+                 num_layers=3, nhead=4, dim_feedforward=512):
     if not torch.cuda.is_available():
         raise RuntimeError("No CUDA device found.")
 
     device = torch.device("cuda")
     print(f"[redteam] Device : {torch.cuda.get_device_name(0)}")
-    print(f"[redteam] Config : steps={steps}, batch={batch_size}, seq={seq_len}, d_model={d_model}")
+    print(f"[redteam] Config : steps={steps}, batch={batch_size}, seq={seq_len},"
+          f" d_model={d_model}, layers={num_layers}, nhead={nhead},"
+          f" ff={dim_feedforward}")
 
-    model     = TinyTransformer(d_model=d_model).to(device)
+    model     = TinyTransformer(d_model=d_model, nhead=nhead,
+                                num_layers=num_layers,
+                                dim_feedforward=dim_feedforward).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     model.train()
 
@@ -109,9 +114,13 @@ def run_training(steps, batch_size, seq_len, d_model):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--steps",      type=int, default=150)
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--seq-len",    type=int, default=64)
-    parser.add_argument("--d-model",    type=int, default=128)
+    parser.add_argument("--steps",           type=int, default=150)
+    parser.add_argument("--batch-size",      type=int, default=8)
+    parser.add_argument("--seq-len",         type=int, default=64)
+    parser.add_argument("--d-model",         type=int, default=128)
+    parser.add_argument("--num-layers",      type=int, default=3)
+    parser.add_argument("--nhead",           type=int, default=4)
+    parser.add_argument("--dim-feedforward", type=int, default=512)
     args = parser.parse_args()
-    run_training(args.steps, args.batch_size, args.seq_len, args.d_model)
+    run_training(args.steps, args.batch_size, args.seq_len, args.d_model,
+                 args.num_layers, args.nhead, args.dim_feedforward)
