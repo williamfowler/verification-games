@@ -46,24 +46,37 @@ INA3221_LABEL  = "VDD_CPU_GPU_CV"
 # This replaces the old 1-D J/TFLOP-vs-power interpolation, which conflated two
 # effects: small workloads look inefficient only because fixed overhead is a
 # large fraction of their energy, not because their marginal J/TFLOP differs.
-# The two parameters are fit by least squares over a sweep of transformer
-# configs in eval_power_monitor.py (E_net = a*TFLOPs + b*t_active → a, b).
+# The two parameters are fit by relative least squares over a sweep of
+# transformer configs in eval_power_monitor.py (E_net = a*TFLOPs + b*t_active).
 #
-# Fit 2026-06-22 via eval_power_monitor.py over 9 transformer configs (6 train /
-# 3 held-out test), d_model 128->768 with batch/seq/layer variation, ~57-190
-# power samples per run. Objective: minimax relative FLOP error. Results:
-#   held-out (TEST) max err 6.39% ; all 9 workloads max err 9.30% (< 10% target).
-# Constants below are the SHIP fit (refit on all 9 runs). The 2-param model is
-# near capacity for this workload set — the low-intensity d128 and d256 runs pull
-# in opposite directions, so the margin to 10% is only ~0.7%. Re-fit and paste
-# the recommended block from eval_power_monitor.py to recalibrate.
+# Scope: the estimator is calibrated and validated for FRONTIER-LIKE workloads —
+# runs that saturate the GPU (avg util >= 80%), which is the actual threat model
+# (an unauthorized frontier training run keeps the cluster busy). On this Orin
+# Nano the CPU+GPU share one power rail and no EMC (memory-bandwidth) signal is
+# exposed, so a partially-loaded GPU's energy cannot be cleanly attributed to
+# FLOPs; the high POWER_OVERHEAD_W below intentionally makes low-intensity
+# workloads estimate near-zero (or None when overhead exceeds net energy), which
+# is correct behavior for a frontier detector. Do NOT trust the estimate for
+# sub-frontier runs (eval_power_monitor.py reports those separately, e.g. a 65%
+# util run came out 35% low).
 #
-# FALLBACK_IDLE_POWER_MW is the live daemon's default idle baseline (523 mW from
-# the clean 2026-05-28 idle measurement). The model was fit against net power
-# above a *per-workload* idle median; on a busy host, prefer measuring idle.
-FALLBACK_IDLE_POWER_MW = 523.0
-POWER_OVERHEAD_W         = 0.197
-E_MARGINAL_J_PER_TFLOP   = 11.41
+# Fit 2026-06-22 via eval_power_monitor.py over 11 frontier transformer configs
+# (7 train / 4 held-out test), d_model 256->768 with batch/seq/layer variation,
+# 237-451 power samples per run. Objective: relative least squares, p_overhead
+# chosen by leave-one-out cross-validation. Results:
+#   held-out (TEST) max err 8.14% ; all 11 frontier workloads max err 6.96%
+#   (mean 2.80%), well under the 10% target.
+# Constants below are the SHIP fit (refit on all 11 frontier runs).
+#
+# FALLBACK_IDLE_POWER_MW (602.9 mW) is the single startup idle baseline measured
+# during this same eval run — it is a MATCHED SET with the constants below: the
+# net energy that produced this fit was measured above 602.9 mW, so the live
+# daemon's default baseline must match to keep estimates unbiased. Re-run
+# eval_power_monitor.py and paste the recommended block (and this baseline) to
+# recalibrate together; do not change one without the other.
+FALLBACK_IDLE_POWER_MW = 602.9
+POWER_OVERHEAD_W         = 3.675
+E_MARGINAL_J_PER_TFLOP   = 5.89
 
 ACTIVE_GPU_UTIL_THRESHOLD = 5.0
 START_ACTIVE_POLLS = 2
