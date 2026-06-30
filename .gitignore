@@ -3,3 +3,7 @@
 .claude
 .codex
 setup_guide/
+CLAUDE.md
+AGENTS.md
+__pycache__/
+*.db

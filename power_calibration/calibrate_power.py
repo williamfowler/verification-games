@@ -49,8 +49,10 @@ CONFIGS = [
 ]
 
 DEFAULT_OUTPUT  = "calibration_results.txt"
-WORKLOAD_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "sample_ml_workload.py")
+# This file lives in power_calibration/; the workload script and the venv are at
+# the repo root one level up.
+REPO_ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WORKLOAD_SCRIPT = os.path.join(REPO_ROOT, "sample_ml_workload.py")
 
 
 # ── Python interpreter ────────────────────────────────────────────────────────
@@ -61,9 +63,8 @@ def find_venv_python():
     sudo, sys.executable is the system Python which lacks the bundled CUDA libs
     that the venv torch ships with.
     """
-    script_dir = os.path.dirname(os.path.abspath(__file__))
     for name in ("python3", "python"):
-        p = os.path.join(script_dir, ".venv", "bin", name)
+        p = os.path.join(REPO_ROOT, ".venv", "bin", name)
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     return sys.executable
@@ -175,6 +176,102 @@ class PowerSampler:
             self._stop.wait(POLL_S)
 
 
+# ── DRAM bytes sampler (actmon, via sudoers reader) ───────────────────────────
+
+ACTMON_READER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "actmon_reader.py")
+
+
+class BytesSampler:
+    """
+    Streams DRAM bandwidth from the privileged actmon reader (root-only debugfs)
+    so the unprivileged calibration sweep can integrate bytes moved. Mirrors
+    PowerSampler's lifecycle; designed to start/stop on the SAME window as the
+    PowerSampler so bytes are commensurable with net_energy_j / duration_s.
+
+    Requires the NOPASSWD sudoers entry for actmon_reader.py (see that file's
+    header). If sudo / the reader is unavailable, no samples are collected and
+    total_tb() returns None — the eval then falls back to the 2-parameter fit.
+    """
+
+    def __init__(self):
+        from detect_flops import actmon_bytes_per_s  # single source of truth
+        self._to_bytes_per_s = actmon_bytes_per_s
+        self.samples = []          # (monotonic_t, bytes_per_s)
+        self.available = False
+        self.proc = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        try:
+            # -n: never prompt; fail immediately if NOPASSWD is not configured.
+            self.proc = subprocess.Popen(
+                ["sudo", "-n", find_venv_python(), ACTMON_READER_SCRIPT,
+                 "--interval", str(POLL_S)],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, bufsize=1,
+            )
+        except OSError:
+            self.proc = None
+
+    def start(self):
+        if self.proc is not None:
+            self._thread.start()
+
+    def stop(self):
+        # The reader runs as root (via sudo); a non-root terminate()/kill() would
+        # EPERM, so we stop it by CLOSING the read end of its stdout pipe — the
+        # reader's next write then raises BrokenPipeError and it self-exits (see
+        # actmon_reader.py). This avoids leaking a root process per workload.
+        self._stop.set()
+        if self.proc is not None:
+            try:
+                self.proc.stdout.close()
+            except OSError:
+                pass
+            try:
+                self.proc.wait(timeout=3)   # reader exits via EPIPE within ~1 poll
+            except subprocess.TimeoutExpired:
+                pass                         # cannot signal a root proc; it should be gone
+        if self._thread.is_alive():
+            self._thread.join(timeout=2)
+
+    def _run(self):
+        try:
+            for line in iter(self.proc.stdout.readline, ""):
+                if self._stop.is_set():
+                    break
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                try:
+                    util = float(parts[1])
+                    emc_rate = float(parts[2])
+                except ValueError:
+                    continue
+                bps = self._to_bytes_per_s(util, emc_rate)
+                if bps is not None:
+                    self.available = True
+                    self.samples.append((time.monotonic(), bps))
+        except (ValueError, OSError):
+            pass   # stdout closed by stop() while blocked in readline
+
+    def total_tb(self):
+        """Trapezoidal integration of bytes/s → terabytes, or None if no samples."""
+        if not self.available or len(self.samples) < 2:
+            return None
+        total_bytes = 0.0
+        for i in range(1, len(self.samples)):
+            t0, b0 = self.samples[i - 1]
+            t1, b1 = self.samples[i]
+            total_bytes += 0.5 * (b0 + b1) * (t1 - t0)
+        return total_bytes / 1e12
+
+    def avg_bytes_per_s(self):
+        if not self.samples:
+            return None
+        return mean(b for _, b in self.samples)
+
+
 # ── Idle sampling ─────────────────────────────────────────────────────────────
 
 def sample_idle(duration_s, volt_path, curr_path, ts_proc, label):
@@ -250,6 +347,7 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     # Read via readline (not `for line in proc.stdout`) to avoid the iterator's
     # read-ahead buffering, which would also delay the trigger.
     sampler = None
+    bytes_sampler = None
     t_start = None
 
     output_lines = []
@@ -260,6 +358,9 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
             t_start = time.monotonic()
             sampler = PowerSampler(volt_path, curr_path, ts_proc)
             sampler.start()
+            # Same window as the power sampler so bytes are commensurable.
+            bytes_sampler = BytesSampler()
+            bytes_sampler.start()
     proc.wait()
 
     if sampler is not None:
@@ -268,6 +369,11 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     else:
         duration_s = 0.0
         sampler = PowerSampler(volt_path, curr_path, ts_proc)  # empty sampler
+    if bytes_sampler is not None:
+        bytes_sampler.stop()
+    tb_moved = bytes_sampler.total_tb() if bytes_sampler is not None else None
+    avg_bytes_per_s = (bytes_sampler.avg_bytes_per_s()
+                       if bytes_sampler is not None else None)
     stdout_text = "".join(output_lines)
     gt_tflops   = parse_ground_truth_tflops(stdout_text)
 
@@ -299,6 +405,8 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
                             if sampler.gpu_samples else None,
         "avg_emc_pct":      mean(e for _, e in sampler.emc_samples)
                             if sampler.emc_samples else None,
+        "tb_moved":         tb_moved,
+        "avg_bytes_per_s":  avg_bytes_per_s,
         "n_power_samples":  len(sampler.power_samples),
     }
 

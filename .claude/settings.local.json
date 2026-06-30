@@ -19,7 +19,10 @@
       "Bash(.venv/bin/python3 eval_power_monitor.py --output eval_results.txt)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(timeout 4 tegrastats --interval 500)",
-      "Bash(.venv/bin/python3 -)"
+      "Bash(.venv/bin/python3 -)",
+      "Bash(timeout 4 tegrastats --interval 1000)",
+      "Bash(.venv/bin/python3 *)",
+      "Bash(echo \"workload PID $!\")"
     ]
   }
 }

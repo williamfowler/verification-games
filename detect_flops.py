@@ -17,6 +17,7 @@ ORIN_PROFILE = {
     "TFLOPS_TF32":        7.65,
     "TFLOPS_FP32":        1.5,
     "PEAK_BW_BYTES_S": 68.0e9,
+    "EMC_MAX_HZ":      3199e6,
 }
 
 # Roofline is an auxiliary signal. PyTorch on Ampere commonly uses TF32 for
@@ -60,23 +61,69 @@ INA3221_LABEL  = "VDD_CPU_GPU_CV"
 # sub-frontier runs (eval_power_monitor.py reports those separately, e.g. a 65%
 # util run came out 35% low).
 #
-# Fit 2026-06-22 via eval_power_monitor.py over 11 frontier transformer configs
-# (7 train / 4 held-out test), d_model 256->768 with batch/seq/layer variation,
-# 237-451 power samples per run. Objective: relative least squares, p_overhead
-# chosen by leave-one-out cross-validation. Results:
-#   held-out (TEST) max err 8.14% ; all 11 frontier workloads max err 6.96%
-#   (mean 2.80%), well under the 10% target.
-# Constants below are the SHIP fit (refit on all 11 frontier runs).
+# Fit 2026-06-30 via eval_power_monitor.py over 14 frontier transformer configs
+# (9 train / 5 held-out test, seed=12345), d_model 256->768 with batch/seq/layer
+# variation. Objective: relative least squares, p_overhead by leave-one-out CV.
+# Results (2-param): held-out (TEST) max err 8.40% ; all 14 frontier max err 8.98%
+# (mean 3.75%), under the 10% target.
+# Constants below are the SHIP fit (refit on all 14 frontier runs).
 #
-# FALLBACK_IDLE_POWER_MW (602.9 mW) is the single startup idle baseline measured
-# during this same eval run — it is a MATCHED SET with the constants below: the
-# net energy that produced this fit was measured above 602.9 mW, so the live
-# daemon's default baseline must match to keep estimates unbiased. Re-run
-# eval_power_monitor.py and paste the recommended block (and this baseline) to
-# recalibrate together; do not change one without the other.
-FALLBACK_IDLE_POWER_MW = 602.9
-POWER_OVERHEAD_W         = 3.675
-E_MARGINAL_J_PER_TFLOP   = 5.89
+# FALLBACK_IDLE_POWER_MW (642.0 mW) is the single startup idle baseline measured
+# during this same eval run — it is a MATCHED SET with BOTH constant blocks below
+# (2-param AND EMC): the net energy that produced these fits was measured above
+# 642.0 mW, so the live daemon's default baseline must match to keep estimates
+# unbiased. The daemon feeds ONE baseline to both estimators, so all of these move
+# together. Re-run eval_power_monitor.py and paste the recommended block (and this
+# baseline) to recalibrate; do not change one without the others.
+FALLBACK_IDLE_POWER_MW = 642.0
+POWER_OVERHEAD_W         = 3.450
+E_MARGINAL_J_PER_TFLOP   = 6.23
+
+# EMC / DRAM-bytes term (memory-energy) — its OWN matched constants.
+#
+# A second, PARALLEL estimator (estimate_tflops_emc) splits net energy into three
+# terms instead of two, adding a measured memory-energy term proportional to DRAM
+# bytes moved:
+#
+#     E_net = E_MARGINAL_EMC_J_PER_TFLOP * TFLOPs
+#           + E_PER_TB_J * TB_moved          <- observed (not fitted) per run
+#           + POWER_OVERHEAD_EMC_W * t_active
+#
+# so TFLOPs = (E_net - E_PER_TB_J*TB_moved - POWER_OVERHEAD_EMC_W*t) / E_MARGINAL_EMC.
+#
+# The 3-param fit produces its OWN E_MARGINAL / POWER_OVERHEAD distinct from the
+# 2-param block above (re-attributed once memory energy is split out), so the EMC
+# estimator uses POWER_OVERHEAD_EMC_W / E_MARGINAL_EMC_J_PER_TFLOP, NOT the 2-param
+# pair. Both blocks share FALLBACK_IDLE_POWER_MW (above).
+#
+# Motivation is adversarial: an energy-only estimator can be spoofed by a workload
+# operating OFF the normal FLOPs<->bytes line (e.g. low-FLOP/high-memory traffic to
+# inflate energy). The byte term, fed by the actmon DRAM-activity counters below,
+# is what catches that. TB_moved comes from integrating EMC bandwidth utilization
+# over the workload; see ActmonReader. Runs in parallel with the 2-param estimator
+# (both logged) for A/B; it is NOT a replacement.
+#
+# Fit 2026-06-30 (same run as above): held-out (TEST) max err 8.34%, all 14
+# frontier max err 9.17% (mean 3.93%) — no regression vs 2-param, and ~6pts better
+# on the one scorable sub-frontier run (28.9% -> 22.9%). NOTE: E_PER_TB_J is only
+# WEAKLY determined here (corr(gt,tb)=0.91, cond=1.3e8) because benign frontier
+# runs are near-collinear in (TFLOPs, bytes); the value will shift with better-
+# conditioned calibration data. The actmon byte scale is also uncalibrated, but
+# that is absorbed into E_PER_TB_J (see actmon_bytes_per_s). Promoted deliberately
+# for adversarial coverage despite weak determination.
+POWER_OVERHEAD_EMC_W       = 2.163
+E_MARGINAL_EMC_J_PER_TFLOP = 5.12
+E_PER_TB_J                 = 3857.934
+
+# Tegra memory-controller activity monitor (actmon) + EMC clock, via debugfs.
+# Root-only; the daemon runs as root and reads these directly. tegrastats does NOT
+# expose EMC on this JetPack 6.2 build (its EMC_FREQ field never matches), so the
+# TegrastatsReader/get_emc_util roofline path stays None in practice — this actmon
+# path is the real memory-bandwidth signal. See power_calibration/actmon_reader.py
+# for the unprivileged (sudoers) variant used by the calibration sweep.
+ACTMON_PRD_PATH = "/sys/kernel/debug/bpmp/debug/actmon/mc_all_last_prd_activity"
+ACTMON_AVG_PATH = "/sys/kernel/debug/bpmp/debug/actmon/mc_all_avg_activity"
+EMC_RATE_PATH   = "/sys/kernel/debug/bpmp/debug/clk/emc/rate"
 
 ACTIVE_GPU_UTIL_THRESHOLD = 5.0
 START_ACTIVE_POLLS = 2
@@ -162,6 +209,10 @@ def init_db(db_path):
         ("dt_sec", "REAL"),
         ("roofline_tflops_delta", "REAL"),
         ("power_tflops_delta", "REAL"),
+        # EMC/bytes term (parallel estimator)
+        ("bytes_delta", "REAL"),
+        ("actmon_util", "REAL"),
+        ("power_emc_tflops_delta", "REAL"),
     ):
         add_column_if_missing(conn, "flop_log", column, definition)
     for column, definition in (
@@ -171,6 +222,10 @@ def init_db(db_path):
         ("avg_emc_util", "REAL"),
         ("avg_freq_mhz", "REAL"),
         ("estimator", "TEXT"),
+        # EMC/bytes term (parallel estimator)
+        ("tb_moved", "REAL"),
+        ("power_est_tflops_emc", "REAL"),
+        ("estimator_emc", "TEXT"),
     ):
         add_column_if_missing(conn, "workload_sessions", column, definition)
     conn.commit()
@@ -210,6 +265,36 @@ def estimate_tflops(net_energy_j, active_time_s,
     if net_energy_j <= 0 or active_time_s <= 0 or e_marginal_j_per_tflop <= 0:
         return None
     flop_energy_j = net_energy_j - p_overhead_w * active_time_s
+    if flop_energy_j <= 0:
+        return None
+    return flop_energy_j / e_marginal_j_per_tflop
+
+
+def estimate_tflops_emc(net_energy_j, active_time_s, tb_moved,
+                        p_overhead_w=POWER_OVERHEAD_EMC_W,
+                        e_marginal_j_per_tflop=E_MARGINAL_EMC_J_PER_TFLOP,
+                        e_per_tb_j=E_PER_TB_J):
+    """
+    3-parameter active-energy model — the EMC/bytes-aware estimator, run in
+    parallel with estimate_tflops for A/B (NOT a replacement).
+
+        TFLOPs = (E_net - e_per_tb_j*tb_moved - p_overhead_w*t_active)
+                 / e_marginal_j_per_tflop
+
+    Subtracts a measured memory-energy term (e_per_tb_j * TB moved) in addition to
+    the fixed active overhead before converting the remainder at the marginal
+    J/TFLOP rate. With tb_moved=0 and e_per_tb_j=0 this is identical to
+    estimate_tflops, so the 2-param behavior is exactly recoverable. Params are
+    overridable so the eval can score candidate fits through this exact path.
+
+    Returns estimated TFLOPs, or None when inputs are non-positive or the overhead
+    plus memory-energy terms swamp the measured energy.
+    """
+    if net_energy_j <= 0 or active_time_s <= 0 or e_marginal_j_per_tflop <= 0:
+        return None
+    flop_energy_j = (net_energy_j
+                     - e_per_tb_j * tb_moved
+                     - p_overhead_w * active_time_s)
     if flop_energy_j <= 0:
         return None
     return flop_energy_j / e_marginal_j_per_tflop
@@ -298,6 +383,82 @@ def get_emc_util():
                 proc.kill()
 
 
+def actmon_bytes_per_s(util_fraction, emc_rate_hz):
+    """
+    Convert an EMC bandwidth-utilization fraction (+ current EMC clock) to DRAM
+    bytes/s. Single source of truth shared by the daemon's ActmonReader and the
+    calibration BytesSampler.
+
+        bytes/s = util_fraction * PEAK_BW_BYTES_S * (emc_rate / EMC_MAX_HZ)
+
+    The (emc_rate / EMC_MAX_HZ) factor corrects for EMC DVFS: PEAK_BW_BYTES_S is
+    the bandwidth at the max EMC clock, so when the controller is downclocked the
+    achievable bandwidth (and thus bytes for a given utilization) scales down with
+    the clock. For memory-bound frontier runs EMC pins near max and the factor is
+    ~1; it matters for partially-loaded / sub-frontier runs.
+
+    Phase-0 note (on-device, 2026-06-30): the mc_all actmon counter is RESPONSIVE
+    (idle->load ~100x; EMC clock 2133->3199 MHz under load) but its absolute scale
+    is uncalibrated — util_fraction here reads ~1% under a load tegrastats calls
+    ~38%. That mismatch does NOT affect the estimator: bytes_per_s is LINEAR in the
+    true activity, so any constant scale error is absorbed by the fitted E_PER_TB_J
+    (TB_obs = k*TB_true => fitted c = E_PER_TB/k, and c*TB_obs is unchanged). Only
+    proportionality matters here, not the absolute byte count.
+    """
+    if util_fraction is None or emc_rate_hz is None:
+        return None
+    return (util_fraction * ORIN_PROFILE["PEAK_BW_BYTES_S"]
+            * (emc_rate_hz / ORIN_PROFILE["EMC_MAX_HZ"]))
+
+
+def _read_sysfs_number(path):
+    """First number in a sysfs/debugfs file as float, or None on any error."""
+    try:
+        with open(path) as f:
+            return float(f.read().strip().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+class ActmonReader:
+    """
+    Reads DRAM bandwidth utilization from the Tegra actmon debugfs counters
+    (root-only) and converts it to bytes/s. This is the real memory-bandwidth
+    signal on this device — distinct from (and not touching) TegrastatsReader,
+    whose EMC_FREQ scrape never matches on JetPack 6.2.
+
+    read_bytes_per_s() returns bytes/s, or None when the counters are unreadable
+    (non-root or paths absent). It never raises, so the daemon degrades gracefully
+    to the 2-parameter estimate. The most recent utilization fraction is stashed
+    in latest_util for per-poll logging.
+    """
+
+    def __init__(self):
+        self.available = None          # None = not yet probed
+        self.latest_util = None
+        self._warned = False
+
+    def read_bytes_per_s(self):
+        emc_rate = _read_sysfs_number(EMC_RATE_PATH)
+        last_prd = _read_sysfs_number(ACTMON_PRD_PATH)
+        if emc_rate is None or last_prd is None or emc_rate <= 0:
+            if self.available is None:
+                self.available = False
+                if not self._warned:
+                    print("[actmon] DRAM bytes signal unavailable "
+                          "(need root / debugfs); EMC estimate disabled.")
+                    self._warned = True
+            self.latest_util = None
+            return None
+        if self.available is None:
+            self.available = True
+            print("[actmon] DRAM bytes signal available.")
+        util = last_prd / emc_rate
+        util = 0.0 if util < 0.0 else (1.0 if util > 1.0 else util)
+        self.latest_util = util
+        return actmon_bytes_per_s(util, emc_rate)
+
+
 def get_freq_hz(jetson):
     """
     Return (cur_hz, max_hz) from jtop 4.x.
@@ -329,6 +490,7 @@ def run_background_monitor(poll_interval=1.5):
 
     print("Daemon initialized. Monitoring Orin Nano hardware channels for new ML workloads...")
     tegrastats_reader = TegrastatsReader(int(poll_interval * 1000))
+    actmon_reader = ActmonReader()
 
     session = {}
 
@@ -350,6 +512,9 @@ def run_background_monitor(poll_interval=1.5):
             "emc_sum": 0.0,
             "emc_count": 0,
             "freq_sum_mhz": 0.0,
+            "net_bytes": 0.0,
+            "actmon_util_sum": 0.0,
+            "actmon_count": 0,
         })
         print("\n[!] NEW WORKLOAD DETECTED")
         observed_idle_mw = observed_idle_baseline_mw(quiet_power_samples)
@@ -372,19 +537,25 @@ def run_background_monitor(poll_interval=1.5):
         j_per_tflop = (session["net_energy_j"] / power_est_tflops
                        if power_est_tflops else None)
 
+        tb_moved = session["net_bytes"] / 1e12
+        power_est_tflops_emc = estimate_tflops_emc(
+            session["net_energy_j"], session["active_time_s"], tb_moved
+        )
+
         conn.execute(
             "INSERT INTO workload_sessions"
             " (start_time, end_time, duration_sec, total_tflops, power_est_tflops,"
             "  peak_gpu_util, poll_count, avg_power_mw, peak_power_mw,"
             "  idle_baseline_mw, net_energy_j, avg_net_power_mw, avg_emc_util,"
-            "  avg_freq_mhz, estimator)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  avg_freq_mhz, estimator, tb_moved, power_est_tflops_emc, estimator_emc)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (session["start_time"], timestamp, duration_sec,
              session["roofline_tflops"], power_est_tflops,
              session["peak_util"], poll_count,
              avg_power_mw, session["peak_power"] or None,
              session["idle_baseline_mw"], session["net_energy_j"],
-             avg_net_power_mw, avg_emc_util, avg_freq_mhz, "power_energy_v1")
+             avg_net_power_mw, avg_emc_util, avg_freq_mhz, "power_energy_v1",
+             tb_moved, power_est_tflops_emc, "power_energy_emc_v1")
         )
         conn.commit()
 
@@ -393,6 +564,9 @@ def run_background_monitor(poll_interval=1.5):
         if power_est_tflops is not None:
             print(f"      Power est.         : {power_est_tflops:.4f} TFLOPs"
                   f"  ({j_per_tflop:.2f} J/TFLOP)")
+        if power_est_tflops_emc is not None:
+            print(f"      Power est. (EMC)   : {power_est_tflops_emc:.4f} TFLOPs"
+                  f"  ({tb_moved:.4f} TB moved)")
         print(f"      Roofline diagnostic: {session['roofline_tflops']:.4f} TFLOPs"
               f"  ({ASSUMED_PRECISION})")
         print(f"      Peak util          : {session['peak_util']:.1f}%")
@@ -418,6 +592,8 @@ def run_background_monitor(poll_interval=1.5):
                 stats = jetson.stats
                 gpu_util = stats.get('GPU', 0)
                 emc_util = tegrastats_reader.read_emc_util()
+                bytes_per_s_now = actmon_reader.read_bytes_per_s()
+                actmon_util = actmon_reader.latest_util
                 cur_freq_hz, max_freq_hz = get_freq_hz(jetson)
                 power_mw = read_power_mw(volt_path, curr_path) if volt_path else None
                 timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -457,8 +633,18 @@ def run_background_monitor(poll_interval=1.5):
                     roofline_tflops_delta = estimated_tflops * dt_sec
                     session["roofline_tflops"] += roofline_tflops_delta
 
+                    # DRAM bytes moved this interval (actmon). 0 when unavailable,
+                    # which makes the EMC estimate fall back to the 2-param value.
+                    bytes_delta = (bytes_per_s_now * dt_sec
+                                   if bytes_per_s_now is not None else 0.0)
+                    session["net_bytes"] += bytes_delta
+                    if actmon_util is not None:
+                        session["actmon_util_sum"] += actmon_util
+                        session["actmon_count"] += 1
+
                     net_power_mw = None
                     power_tflops_delta = None
+                    power_emc_tflops_delta = None
                     if power_mw is not None:
                         net_power_mw = max(power_mw - session["idle_baseline_mw"], 0.0)
                         net_power_w = net_power_mw / 1000.0
@@ -471,6 +657,15 @@ def run_background_monitor(poll_interval=1.5):
                         flop_energy_delta_j = (net_energy_delta_j
                                                - POWER_OVERHEAD_W * dt_sec)
                         power_tflops_delta = flop_energy_delta_j / E_MARGINAL_J_PER_TFLOP
+                        # Parallel 3-param delta: also subtract this interval's
+                        # memory-traffic energy, using the EMC estimator's OWN
+                        # matched constants (not the 2-param pair). Summing these
+                        # equals estimate_tflops_emc() over the whole session.
+                        flop_energy_emc_delta_j = (net_energy_delta_j
+                                                   - E_PER_TB_J * (bytes_delta / 1e12)
+                                                   - POWER_OVERHEAD_EMC_W * dt_sec)
+                        power_emc_tflops_delta = (flop_energy_emc_delta_j
+                                                  / E_MARGINAL_EMC_J_PER_TFLOP)
 
                         session["power_sum"] += power_mw
                         session["net_power_sum"] += net_power_mw
@@ -491,17 +686,23 @@ def run_background_monitor(poll_interval=1.5):
                         session["net_energy_j"] / power_est_so_far
                         if power_est_so_far else None
                     )
+                    power_est_emc_so_far = estimate_tflops_emc(
+                        session["net_energy_j"], session["active_time_s"],
+                        session["net_bytes"] / 1e12
+                    )
 
                     conn.execute(
                         "INSERT INTO flop_log"
                         " (timestamp, tflops_sm, tflops_mem_ceil, estimated_tflops,"
                         "  bound_type, gpu_util, emc_util, power_mw, idle_baseline_mw,"
-                        "  net_power_mw, dt_sec, roofline_tflops_delta, power_tflops_delta)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "  net_power_mw, dt_sec, roofline_tflops_delta, power_tflops_delta,"
+                        "  bytes_delta, actmon_util, power_emc_tflops_delta)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (timestamp, tflops_sm, tflops_mem_ceil, estimated_tflops,
                          bound_type, gpu_util, emc_util, power_mw,
                          session["idle_baseline_mw"], net_power_mw, dt_sec,
-                         roofline_tflops_delta, power_tflops_delta)
+                         roofline_tflops_delta, power_tflops_delta,
+                         bytes_delta, actmon_util, power_emc_tflops_delta)
                     )
                     conn.commit()
 
@@ -523,6 +724,10 @@ def run_background_monitor(poll_interval=1.5):
                     if power_est_so_far is not None:
                         print(f"Power estimate     : {power_est_so_far:.4f} TFLOPs"
                               f"  ({j_per_tflop_so_far:.2f} J/TFLOP effective)")
+                    if power_est_emc_so_far is not None:
+                        print(f"Power est. (EMC)   : {power_est_emc_so_far:.4f} TFLOPs"
+                              f"  ({session['net_bytes']/1e12:.4f} TB moved"
+                              f"{', actmon ' + format(actmon_util*100, '.0f') + '%' if actmon_util is not None else ''})")
                     print(f"Roofline diagnostic total: {session['roofline_tflops']:.4f} TFLOPs")
 
                 elif active_workload_tracked and quiet_poll_streak >= STOP_QUIET_POLLS:
