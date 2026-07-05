@@ -114,9 +114,11 @@ with better-conditioned calibration data.
 The <10% claim holds **only for frontier-like (≥80% util) workloads**.
 Sub-frontier runs are deliberately out of scope: with a shared CPU+GPU power rail
 and no EMC signal, a partially-loaded GPU's energy cannot be cleanly attributed to
-FLOPs (a 65%-util run came out 35% low). The high `POWER_OVERHEAD_W` intentionally
-drives low-intensity estimates toward zero/`None` — correct behavior for a
-frontier detector, but not a general-purpose FLOP meter.
+FLOPs (a 65%-util run came out 35% low). The high `POWER_OVERHEAD_W` drives
+low-intensity estimates low and, once overhead exceeds net energy, **negative**.
+The estimator returns that raw value (the daemon always reports a number); a
+`<=0`/sub-frontier estimate means "below the frontier detection floor", not a real
+FLOP count. It is a frontier detector, not a general-purpose FLOP meter.
 
 ## The calibration loop
 

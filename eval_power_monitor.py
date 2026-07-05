@@ -589,13 +589,11 @@ def main():
     if volt_path is None:
         print("ERROR: INA3221 sensor not found.")
         sys.exit(1)
-    if read_power_mw(volt_path, curr_path) is None:
-        print("ERROR: failed to read INA3221.")
-        sys.exit(1)
+    read_power_mw(volt_path, curr_path)   # raises loudly if the sensor is unreadable
     print(f"INA3221 sensor OK: {volt_path}")
 
-    ts_proc = start_tegrastats(int(POLL_S * 1000))
-    print("tegrastats started." if ts_proc else "Warning: tegrastats unavailable.")
+    ts_proc = start_tegrastats(int(POLL_S * 1000))   # raises if tegrastats is missing
+    print("tegrastats started.")
 
     try:
         # ── Single idle baseline (measured once, before any workload) ─────────
@@ -604,16 +602,17 @@ def main():
         idle = sample_idle(args.baseline_seconds, volt_path, curr_path,
                            ts_proc, "baseline")
         idle_mw = [mw for _, mw in idle]
-        if idle_mw:
-            idle_baseline_mw = median(idle_mw)
-            sd = stdev(idle_mw) if len(idle_mw) > 1 else 0.0
-            print(f"Idle baseline: {idle_baseline_mw:.1f} mW"
-                  f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
-                  f"  — shared by ALL workloads", flush=True)
-        else:
-            idle_baseline_mw = detect_flops.FALLBACK_IDLE_POWER_MW
-            print(f"WARNING: no idle samples; using fallback"
-                  f" {idle_baseline_mw:.1f} mW", flush=True)
+        if not idle_mw:
+            # The baseline is critical (it sets the matched set); no samples means
+            # something is wrong with sampling — fail loudly rather than fall back.
+            raise RuntimeError(
+                "no idle power samples collected — cannot establish a baseline "
+                "(check the INA3221 sensor and POLL_S timing).")
+        idle_baseline_mw = median(idle_mw)
+        sd = stdev(idle_mw) if len(idle_mw) > 1 else 0.0
+        print(f"Idle baseline: {idle_baseline_mw:.1f} mW"
+              f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
+              f"  — shared by ALL workloads", flush=True)
 
         # ── Run the full workload pool against that one baseline ──────────────
         records = run_sweep(CONFIGS, idle_baseline_mw, volt_path, curr_path, ts_proc)
@@ -653,21 +652,19 @@ def main():
         print(f"Ship fit (ALL frontier): E_MARGINAL={ship_fit[0]:.4f} J/TFLOP,"
               f" P_OVERHEAD={ship_fit[1]:.4f} W")
 
-        # 3-param / EMC fit, in parallel — only if actmon bytes were captured for
-        # every frontier run (sudoers reader configured). Otherwise report 2-param.
-        emc_available = (len(frontier) > 0
-                         and all(r.get("tb_moved") is not None for r in frontier))
-        if emc_available:
-            train_fit_emc = fit_active_energy_emc_model(train)
-            ship_fit_emc = fit_active_energy_emc_model(frontier)
-            print(f"Validation fit EMC (TRAIN): E_MARGINAL={train_fit_emc[0]:.4f},"
-                  f" E_PER_TB={train_fit_emc[1]:.4f}, P_OVERHEAD={train_fit_emc[2]:.4f}")
-            print(f"Ship fit EMC (ALL frontier): E_MARGINAL={ship_fit_emc[0]:.4f},"
-                  f" E_PER_TB={ship_fit_emc[1]:.4f}, P_OVERHEAD={ship_fit_emc[2]:.4f}")
-        else:
-            train_fit_emc = ship_fit_emc = None
-            print("EMC term unavailable (no actmon tb_moved for all frontier runs);"
-                  " reporting 2-param only.")
+        # 3-param / EMC fit, in parallel. actmon bytes are captured for every run
+        # (run_workload raises if the reader yields nothing), so a missing tb_moved
+        # here is an unexpected hard error — we do NOT silently report 2-param only.
+        missing_tb = [r["label"] for r in frontier if r.get("tb_moved") is None]
+        if missing_tb:
+            raise RuntimeError(f"frontier runs missing tb_moved: {missing_tb} — "
+                               f"actmon capture failed for them.")
+        train_fit_emc = fit_active_energy_emc_model(train)
+        ship_fit_emc = fit_active_energy_emc_model(frontier)
+        print(f"Validation fit EMC (TRAIN): E_MARGINAL={train_fit_emc[0]:.4f},"
+              f" E_PER_TB={train_fit_emc[1]:.4f}, P_OVERHEAD={train_fit_emc[2]:.4f}")
+        print(f"Ship fit EMC (ALL frontier): E_MARGINAL={ship_fit_emc[0]:.4f},"
+              f" E_PER_TB={ship_fit_emc[1]:.4f}, P_OVERHEAD={ship_fit_emc[2]:.4f}")
 
         passed, test_max = write_report(train, test, frontier, sub_frontier,
                                         records, train_fit, ship_fit,

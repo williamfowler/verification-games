@@ -17,8 +17,9 @@ import sys
 
 INA3221_DRIVER = "/sys/bus/i2c/drivers/ina3221/1-0040/hwmon"
 INA3221_LABEL  = "VDD_CPU_GPU_CV"
-WORKLOAD_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "sample_ml_workload.py")
+WORKLOAD_SCRIPT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "sample_ml_workload.py")
 
 
 def find_ina3221_paths():

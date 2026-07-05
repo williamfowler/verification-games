@@ -86,27 +86,24 @@ def find_ina3221_paths():
 
 
 def read_power_mw(volt_path, curr_path):
-    try:
-        with open(volt_path) as f:
-            mv = float(f.read().strip())
-        with open(curr_path) as f:
-            ma = float(f.read().strip())
-        return mv * ma / 1000.0
-    except OSError:
-        return None
+    """Power in mW. Raises on read error — a sensor read that should work but
+    doesn't is surfaced, not masked as None."""
+    with open(volt_path) as f:
+        mv = float(f.read().strip())
+    with open(curr_path) as f:
+        ma = float(f.read().strip())
+    return mv * ma / 1000.0
 
 
 # ── tegrastats helpers ────────────────────────────────────────────────────────
 
 def start_tegrastats(interval_ms):
-    try:
-        return subprocess.Popen(
-            ["tegrastats", "--interval", str(interval_ms)],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, bufsize=1,
-        )
-    except OSError:
-        return None
+    # Let a launch failure (tegrastats missing) propagate — surfaced, not masked.
+    return subprocess.Popen(
+        ["tegrastats", "--interval", str(interval_ms)],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, bufsize=1,
+    )
 
 
 def drain_tegrastats(proc):
@@ -153,6 +150,7 @@ class PowerSampler:
         self.gpu_samples    = []   # (monotonic_t, gpu_pct)
         self.emc_samples    = []   # (monotonic_t, emc_pct)
         self._stop          = threading.Event()
+        self._exc           = None
         self._thread        = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -161,19 +159,27 @@ class PowerSampler:
     def stop(self):
         self._stop.set()
         self._thread.join()
+        # Surface any failure that happened in the sampling thread — a swallowed
+        # thread exception would silently corrupt the energy integral.
+        if self._exc is not None:
+            raise self._exc
 
     def _run(self):
-        while not self._stop.is_set():
-            t   = time.monotonic()
-            mw  = read_power_mw(self.volt_path, self.curr_path)
-            gpu, emc = drain_tegrastats(self.ts_proc)
-            if mw  is not None:
+        try:
+            while not self._stop.is_set():
+                t   = time.monotonic()
+                mw  = read_power_mw(self.volt_path, self.curr_path)
+                gpu, emc = drain_tegrastats(self.ts_proc)
                 self.power_samples.append((t, mw))
-            if gpu is not None:
-                self.gpu_samples.append((t, gpu))
-            if emc is not None:
-                self.emc_samples.append((t, emc))
-            self._stop.wait(POLL_S)
+                # gpu/emc are None only until tegrastats emits its first line — a
+                # genuine "no data yet", not a failure, so those stay guarded.
+                if gpu is not None:
+                    self.gpu_samples.append((t, gpu))
+                if emc is not None:
+                    self.emc_samples.append((t, emc))
+                self._stop.wait(POLL_S)
+        except BaseException as e:
+            self._exc = e
 
 
 # ── DRAM bytes sampler (actmon, via sudoers reader) ───────────────────────────
@@ -190,8 +196,10 @@ class BytesSampler:
     PowerSampler so bytes are commensurable with net_energy_j / duration_s.
 
     Requires the NOPASSWD sudoers entry for actmon_reader.py (see that file's
-    header). If sudo / the reader is unavailable, no samples are collected and
-    total_tb() returns None — the eval then falls back to the 2-parameter fit.
+    header). A spawn failure raises immediately; if the reader produces no samples
+    (e.g. sudoers not configured) the caller is expected to treat that as a hard
+    error (see run_workload / require_samples), not silently drop the byte term.
+    The reader's stderr is inherited so its diagnostics are visible.
     """
 
     def __init__(self):
@@ -199,23 +207,21 @@ class BytesSampler:
         self._to_bytes_per_s = actmon_bytes_per_s
         self.samples = []          # (monotonic_t, bytes_per_s)
         self.available = False
-        self.proc = None
         self._stop = threading.Event()
+        self._exc = None
         self._thread = threading.Thread(target=self._run, daemon=True)
-        try:
-            # -n: never prompt; fail immediately if NOPASSWD is not configured.
-            self.proc = subprocess.Popen(
-                ["sudo", "-n", find_venv_python(), ACTMON_READER_SCRIPT,
-                 "--interval", str(POLL_S)],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                text=True, bufsize=1,
-            )
-        except OSError:
-            self.proc = None
+        # -n: never prompt; fail immediately if NOPASSWD is not configured. A
+        # Popen failure (sudo missing) propagates rather than being masked.
+        # stderr inherited (not DEVNULL) so the reader's "must run as root" message
+        # and any traceback are visible for debugging.
+        self.proc = subprocess.Popen(
+            ["sudo", "-n", find_venv_python(), ACTMON_READER_SCRIPT,
+             "--interval", str(POLL_S)],
+            stdout=subprocess.PIPE, text=True, bufsize=1,
+        )
 
     def start(self):
-        if self.proc is not None:
-            self._thread.start()
+        self._thread.start()
 
     def stop(self):
         # The reader runs as root (via sudo); a non-root terminate()/kill() would
@@ -223,17 +229,18 @@ class BytesSampler:
         # reader's next write then raises BrokenPipeError and it self-exits (see
         # actmon_reader.py). This avoids leaking a root process per workload.
         self._stop.set()
-        if self.proc is not None:
-            try:
-                self.proc.stdout.close()
-            except OSError:
-                pass
-            try:
-                self.proc.wait(timeout=3)   # reader exits via EPIPE within ~1 poll
-            except subprocess.TimeoutExpired:
-                pass                         # cannot signal a root proc; it should be gone
+        try:
+            self.proc.stdout.close()
+        except OSError:
+            pass
+        # No TimeoutExpired swallow: if the reader did NOT exit after we closed the
+        # pipe, that is a real problem (leaked root process) we want surfaced.
+        self.proc.wait(timeout=5)
         if self._thread.is_alive():
             self._thread.join(timeout=2)
+        # Surface any failure that happened in the reader-draining thread.
+        if self._exc is not None:
+            raise self._exc
 
     def _run(self):
         try:
@@ -241,23 +248,30 @@ class BytesSampler:
                 if self._stop.is_set():
                     break
                 parts = line.split()
-                if len(parts) < 3:
+                if not parts:
                     continue
-                try:
-                    util = float(parts[1])
-                    emc_rate = float(parts[2])
-                except ValueError:
-                    continue
-                bps = self._to_bytes_per_s(util, emc_rate)
-                if bps is not None:
-                    self.available = True
-                    self.samples.append((time.monotonic(), bps))
-        except (ValueError, OSError):
-            pass   # stdout closed by stop() while blocked in readline
+                # No try/except around the parse: a malformed line from the reader
+                # is unexpected and should surface, not be silently skipped.
+                util = float(parts[1])
+                emc_rate = float(parts[2])
+                self.available = True
+                self.samples.append((time.monotonic(), self._to_bytes_per_s(util, emc_rate)))
+        except BaseException as e:
+            # Only an intentional stop (pipe closed by stop()) is expected here;
+            # anything else is a real error to re-raise from stop().
+            if not self._stop.is_set():
+                self._exc = e
+
+    def require_samples(self):
+        """Raise if the reader produced no samples (sudoers/root misconfigured)."""
+        if not self.available:
+            raise RuntimeError(
+                "actmon reader produced no samples — is the NOPASSWD sudoers entry "
+                "for actmon_reader.py configured and are you able to sudo -n?")
 
     def total_tb(self):
-        """Trapezoidal integration of bytes/s → terabytes, or None if no samples."""
-        if not self.available or len(self.samples) < 2:
+        """Trapezoidal integration of bytes/s → terabytes, or None if too few samples."""
+        if len(self.samples) < 2:
             return None
         total_bytes = 0.0
         for i in range(1, len(self.samples)):
@@ -362,20 +376,23 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
             bytes_sampler = BytesSampler()
             bytes_sampler.start()
     proc.wait()
-
-    if sampler is not None:
-        sampler.stop()
-        duration_s = time.monotonic() - t_start
-    else:
-        duration_s = 0.0
-        sampler = PowerSampler(volt_path, curr_path, ts_proc)  # empty sampler
-    if bytes_sampler is not None:
-        bytes_sampler.stop()
-    tb_moved = bytes_sampler.total_tb() if bytes_sampler is not None else None
-    avg_bytes_per_s = (bytes_sampler.avg_bytes_per_s()
-                       if bytes_sampler is not None else None)
     stdout_text = "".join(output_lines)
-    gt_tflops   = parse_ground_truth_tflops(stdout_text)
+
+    # The trigger gates sampling; if it never appeared the workload did not start
+    # as expected — a hard error, not a silent zero-duration run.
+    if sampler is None:
+        raise RuntimeError(
+            f"workload never emitted '[redteam] Starting workload' "
+            f"(exit code {proc.returncode}); cannot sample. Last output:\n"
+            f"{stdout_text[-800:]}")
+
+    sampler.stop()
+    duration_s = time.monotonic() - t_start
+    bytes_sampler.stop()          # created alongside sampler, so never None here
+    bytes_sampler.require_samples()   # loud if actmon produced nothing
+    tb_moved = bytes_sampler.total_tb()
+    avg_bytes_per_s = bytes_sampler.avg_bytes_per_s()
+    gt_tflops = parse_ground_truth_tflops(stdout_text)
 
     if proc.returncode != 0:
         print(f"  WARNING: workload exited with code {proc.returncode}", flush=True)

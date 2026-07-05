@@ -33,6 +33,7 @@ back to the 2-parameter estimator.
 """
 
 import argparse
+import os
 import signal
 import sys
 import time
@@ -50,12 +51,11 @@ def _stop(signum, frame):
 
 
 def _read_number(path):
-    """Return the first number in the file as float, or None on any error."""
-    try:
-        with open(path) as f:
-            return float(f.read().strip().split()[0])
-    except (OSError, ValueError, IndexError):
-        return None
+    """Return the first number in the file as float. Raises (OSError/ValueError/
+    IndexError) on any read or parse failure — a counter that is expected to be
+    readable but is not is a bug we want surfaced immediately, not masked."""
+    with open(path) as f:
+        return float(f.read().strip().split()[0])
 
 
 def main():
@@ -67,31 +67,39 @@ def main():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
-    # Fail fast (non-zero exit) if we cannot read the counters at all, so the
-    # caller treats the bytes signal as unavailable rather than silently zero.
-    if _read_number(EMC_RATE_PATH) is None or _read_number(ACTMON_PRD_PATH) is None:
-        sys.stderr.write(
-            "actmon_reader: cannot read debugfs actmon/emc paths "
-            "(need root; are you running under sudo?)\n")
+    # One explicit, clearly-messaged check that the root-only counters are
+    # readable. This is a setup precondition (need sudo), not a runtime signal
+    # failure, so we surface a precise message and exit non-zero — the caller is
+    # responsible for treating a non-zero exit as a hard error, not silence.
+    try:
+        _read_number(EMC_RATE_PATH)
+        _read_number(ACTMON_PRD_PATH)
+    except OSError as e:
+        sys.stderr.write(f"actmon_reader: cannot read debugfs actmon/emc paths "
+                         f"({e}); must run as root (sudo).\n")
         return 1
 
     while _running:
+        # Any read/parse failure here propagates (loud crash) — we do NOT fall
+        # back to a zero/None sample that would corrupt the integrated bytes.
         emc_rate = _read_number(EMC_RATE_PATH)
         last_prd = _read_number(ACTMON_PRD_PATH)
         avg      = _read_number(ACTMON_AVG_PATH)
-        if emc_rate and emc_rate > 0 and last_prd is not None:
-            util = last_prd / emc_rate
-            util = 0.0 if util < 0.0 else (1.0 if util > 1.0 else util)
-        else:
-            util = 0.0
+        if emc_rate <= 0:
+            raise ValueError(f"actmon_reader: non-positive emc_rate {emc_rate!r}")
+        util = last_prd / emc_rate
+        util = 0.0 if util < 0.0 else (1.0 if util > 1.0 else util)
         # Line-buffered single-line sample; flush so readline() callers see it promptly.
         try:
             sys.stdout.write(f"{time.monotonic():.6f} {util:.6f} "
-                             f"{emc_rate or 0:.0f} {last_prd or 0:.0f} {avg or 0:.0f}\n")
+                             f"{emc_rate:.0f} {last_prd:.0f} {avg:.0f}\n")
             sys.stdout.flush()
         except BrokenPipeError:
-            # Reader (calibration sampler) closed the pipe — exit promptly even if
-            # SIGTERM forwarding through sudo did not reach us.
+            # Intentional shutdown: the caller closed the pipe (its stop()), so
+            # exit promptly. This is the one expected, non-error exit path.
+            # Redirect stdout to devnull so the interpreter's final flush at exit
+            # does not re-raise BrokenPipeError as a noisy "Exception ignored".
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
             return 0
         time.sleep(args.interval)
     return 0
