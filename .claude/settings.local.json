@@ -22,7 +22,8 @@
       "Bash(.venv/bin/python3 -)",
       "Bash(timeout 4 tegrastats --interval 1000)",
       "Bash(.venv/bin/python3 *)",
-      "Bash(echo \"workload PID $!\")"
+      "Bash(echo \"workload PID $!\")",
+      "Bash(nvpmodel -q)"
     ]
   }
 }

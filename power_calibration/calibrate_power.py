@@ -337,18 +337,29 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     # not reach this parent until the buffer flushes (near exit for short runs),
     # starting the power sampler far too late — the race that corrupted the
     # original calibration (only 3-32 samples on shorter runs).
-    cmd = [
-        find_venv_python(), "-u", WORKLOAD_SCRIPT,
-        "--steps",      str(config["steps"]),
-        "--batch-size", str(config["batch_size"]),
-        "--seq-len",    str(config["seq_len"]),
-        "--d-model",    str(config["d_model"]),
-    ]
-    for key, flag in (("num_layers", "--num-layers"),
-                      ("nhead", "--nhead"),
-                      ("dim_feedforward", "--dim-feedforward")):
-        if key in config:
-            cmd += [flag, str(config[key])]
+    #
+    # A config may override the workload entirely via {"script": path,
+    # "args": [...]} — any script that speaks the same stdout protocol (the
+    # "Starting workload" trigger + "Ground truth total : X TFLOPs" line) goes
+    # through this exact sampling path, e.g. adversarial_workload.py.
+    if "script" in config:
+        cmd = ([find_venv_python(), "-u", config["script"]]
+               + [str(a) for a in config.get("args", [])])
+    else:
+        cmd = [
+            find_venv_python(), "-u", WORKLOAD_SCRIPT,
+            "--steps",      str(config["steps"]),
+            "--batch-size", str(config["batch_size"]),
+            "--seq-len",    str(config["seq_len"]),
+            "--d-model",    str(config["d_model"]),
+        ]
+        for key, flag in (("num_layers", "--num-layers"),
+                          ("nhead", "--nhead"),
+                          ("dim_feedforward", "--dim-feedforward"),
+                          ("precision", "--precision"),
+                          ("optimizer", "--optimizer")):
+            if key in config:
+                cmd += [flag, str(config[key])]
     print(f"  Launching: {' '.join(cmd[3:])}", flush=True)
 
     proc = subprocess.Popen(

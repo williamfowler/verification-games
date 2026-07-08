@@ -63,12 +63,24 @@ INA3221_LABEL  = "VDD_CPU_GPU_CV"
 # sub-frontier runs (eval_power_monitor.py reports those separately, e.g. a 65%
 # util run came out 35% low).
 #
-# Fit 2026-06-30 via eval_power_monitor.py over 14 frontier transformer configs
-# (9 train / 5 held-out test, seed=12345), d_model 256->768 with batch/seq/layer
-# variation. Objective: relative least squares, p_overhead by leave-one-out CV.
-# Results (2-param): held-out (TEST) max err 8.40% ; all 14 frontier max err 8.98%
-# (mean 3.75%), under the 10% target.
-# Constants below are the SHIP fit (refit on all 14 frontier runs).
+# Fit 2026-07-07 via eval_power_monitor.py (eval_results_v2, seed=12345) over 21
+# frontier FP32 transformer configs — d_model 256->768 with batch/seq/layer
+# variation PLUS nhead {2,8}, dim_feedforward {3072,4096}, seq 512, and SGD
+# variants. Objective: relative least squares, p_overhead by leave-one-out CV.
+# Results (2-param): held-out (TEST) max err 8.95%; all 21 frontier max err 8.82%
+# (mean 4.00%), under the 10% target. Stability over 200 resampled splits:
+# E_MARGINAL 5.29-6.81 (sd 0.37), split-failure rate 13.5% — see
+# eval_generalization.txt before trusting any single-split PASS.
+#
+# PRECISION SCOPE (why the pool is FP32-only): precision is not observable from
+# power/clocks, and tf32/fp16/bf16 runs do 2-3.5x more FLOPs per joule than
+# fp32 — a precision-blind fit over all of them is degenerate (see
+# eval_results_v2.txt: tf32 runs read ~50% low; fp16/bf16 also drop below the
+# frontier util gate at this model scale). These constants therefore assume
+# FP32 matmul (this build's torch default) and UNDERESTIMATE tensor-core
+# workloads by up to ~3.5x — an acknowledged red-team evasion channel, not a
+# fixable calibration error. Treat estimates as a lower bound w.r.t. precision.
+# Constants below are the SHIP fit (refit on all 21 fp32 frontier runs).
 #
 # FALLBACK_IDLE_POWER_MW (642.0 mW) is the single startup idle baseline measured
 # during this same eval run — it is a MATCHED SET with BOTH constant blocks below
@@ -78,8 +90,8 @@ INA3221_LABEL  = "VDD_CPU_GPU_CV"
 # together. Re-run eval_power_monitor.py and paste the recommended block (and this
 # baseline) to recalibrate; do not change one without the others.
 FALLBACK_IDLE_POWER_MW = 642.0
-POWER_OVERHEAD_W         = 3.450
-E_MARGINAL_J_PER_TFLOP   = 6.23
+POWER_OVERHEAD_W         = 3.750
+E_MARGINAL_J_PER_TFLOP   = 5.72
 
 # EMC / DRAM-bytes term (memory-energy) — its OWN matched constants.
 #
@@ -105,17 +117,83 @@ E_MARGINAL_J_PER_TFLOP   = 6.23
 # over the workload; see ActmonReader. Runs in parallel with the 2-param estimator
 # (both logged) for A/B; it is NOT a replacement.
 #
-# Fit 2026-06-30 (same run as above): held-out (TEST) max err 8.34%, all 14
-# frontier max err 9.17% (mean 3.93%) — no regression vs 2-param, and ~6pts better
-# on the one scorable sub-frontier run (28.9% -> 22.9%). NOTE: E_PER_TB_J is only
-# WEAKLY determined here (corr(gt,tb)=0.91, cond=1.3e8) because benign frontier
-# runs are near-collinear in (TFLOPs, bytes); the value will shift with better-
-# conditioned calibration data. The actmon byte scale is also uncalibrated, but
-# that is absorbed into E_PER_TB_J (see actmon_bytes_per_s). Promoted deliberately
-# for adversarial coverage despite weak determination.
-POWER_OVERHEAD_EMC_W       = 2.163
-E_MARGINAL_EMC_J_PER_TFLOP = 5.12
-E_PER_TB_J                 = 3857.934
+# Fit 2026-07-07 (same eval_results_v2 fp32 run as above): held-out (TEST) max
+# err 14.61% — WORSE than 2-param on benign held-out data, and unstable across
+# resampled splits (E_PER_TB spans 1.2k-6.9k J/TB; 59% of splits fail the 10%
+# target — eval_generalization.txt). Kept deployed anyway because its value is
+# ADVERSARIAL, not accuracy: the 2026-07-07 adversarial probe
+# (adversarial_results.txt) showed a memory-spoof workload at 98% GPU util fools
+# the 2-param estimator (claims 8.3 TFLOPs vs 1.8 true) while this estimator
+# collapses to -96 TFLOPs — an unmistakable spoof flag. It over-corrects (the
+# byte coefficient is high) and penalizes legitimate high-AI work (+17% on a
+# pure-matmul control), so treat it as a tripwire, not a meter. The actmon byte
+# scale is uncalibrated but absorbed into E_PER_TB_J (see actmon_bytes_per_s /
+# power_calibration/actmon_scale_bench.py).
+POWER_OVERHEAD_EMC_W       = 1.463
+E_MARGINAL_EMC_J_PER_TFLOP = 5.61
+E_PER_TB_J                 = 4621.672
+
+# Fingerprint of the device + power mode ALL the constants above were calibrated
+# on. They are one matched set measured on one physical device in one nvpmodel
+# power mode — on any other hardware (or after `nvpmodel -m`) the numbers are
+# meaningless until recalibrated: re-run eval_power_monitor.py there and paste
+# its RECOMMENDED CONSTANTS block plus this fingerprint. The methodology is the
+# portable artifact; the constants are not. The daemon compares this against the
+# live system at startup and warns loudly on mismatch.
+CALIBRATION_FINGERPRINT = {
+    "device_model": "NVIDIA Jetson Orin Nano Engineering Reference"
+                    " Developer Kit Super",     # /proc/device-tree/model
+    "l4t_release": "R36.5.0",                   # /etc/nv_tegra_release
+    "nvpmodel_mode": "25W",                     # nvpmodel -q "NV Power Mode"
+    "calibrated": "2026-07-07",
+}
+
+
+def live_fingerprint():
+    """The running system's counterpart to CALIBRATION_FINGERPRINT. Raises if a
+    source is unreadable — a monitor that can't identify its own hardware should
+    not silently pretend the calibration applies."""
+    with open("/proc/device-tree/model") as f:
+        model = f.read().strip().rstrip("\x00")
+    with open("/etc/nv_tegra_release") as f:
+        m = re.match(r"# (R\d+) \(release\), REVISION: ([\d.]+)", f.read())
+    if not m:
+        raise RuntimeError("cannot parse /etc/nv_tegra_release")
+    l4t = f"{m.group(1)}.{m.group(2)}"
+    out = subprocess.run(["nvpmodel", "-q"], capture_output=True, text=True,
+                         check=True).stdout
+    pm = re.search(r"NV Power Mode:\s*(\S+)", out)
+    if not pm:
+        raise RuntimeError(f"cannot parse nvpmodel -q output: {out!r}")
+    return {"device_model": model, "l4t_release": l4t,
+            "nvpmodel_mode": pm.group(1)}
+
+
+def check_calibration_fingerprint():
+    """Compare live hardware/power-mode against what the constants were
+    calibrated on; print a loud RECALIBRATE banner on any mismatch. Returns True
+    when everything matches."""
+    live = live_fingerprint()
+    mismatches = [
+        (k, CALIBRATION_FINGERPRINT[k], live[k])
+        for k in ("device_model", "l4t_release", "nvpmodel_mode")
+        if CALIBRATION_FINGERPRINT[k] != live[k]
+    ]
+    if not mismatches:
+        print(f"Calibration fingerprint OK: {live['device_model']}"
+              f" | {live['l4t_release']} | {live['nvpmodel_mode']}"
+              f" (calibrated {CALIBRATION_FINGERPRINT['calibrated']})")
+        return True
+    print("!" * 78)
+    print("!! CALIBRATION MISMATCH — estimates from this daemon are NOT valid !!")
+    for key, want, got in mismatches:
+        print(f"!!   {key}: calibrated on {want!r}, running on {got!r}")
+    print("!! The estimator constants are a matched set for the calibrated")
+    print("!! device + power mode only. RECALIBRATE: run eval_power_monitor.py")
+    print("!! on THIS system and paste its RECOMMENDED CONSTANTS (and matched")
+    print("!! idle baseline + this fingerprint) into detect_flops.py.")
+    print("!" * 78)
+    return False
 
 # Tegra memory-controller activity monitor (actmon) + EMC clock, via debugfs.
 # Root-only; the daemon runs as root and reads these directly. This actmon path is
@@ -446,6 +524,7 @@ def run_background_monitor(poll_interval=1.5):
             f"INA3221 power sensor ({INA3221_LABEL}) not found — cannot monitor "
             f"power. Check the sensor wiring / hwmon labels.")
     print(f"INA3221 power sensor: {INA3221_LABEL} found.")
+    check_calibration_fingerprint()
 
     print("Daemon initialized. Monitoring Orin Nano hardware channels for new ML workloads...")
     tegrastats_reader = TegrastatsReader(int(poll_interval * 1000))

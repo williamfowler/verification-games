@@ -42,8 +42,10 @@ Expect ~55-70 min total (long workloads + one baseline).
 """
 
 import argparse
+import json
 import os
 import random
+import re
 import sys
 import time
 from statistics import mean, median, stdev
@@ -101,6 +103,30 @@ CONFIGS = [
     {"d_model": 256, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4800},
     {"d_model": 384, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4500},
     {"d_model": 512, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4500},
+    # — precision axis (2026-07-07): the monitor cannot observe precision, so the
+    #   fit is precision-BLIND across all of these. NB this build's torch default
+    #   is matmul TF32 *off* — the unsuffixed configs above are fp32; "tf32" is a
+    #   new tensor-core mode the pre-2026-07 calibration never saw. —
+    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "precision": "tf32"},
+    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "precision": "tf32"},
+    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "precision": "tf32"},
+    {"d_model": 768, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000, "precision": "tf32"},
+    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "precision": "fp16"},
+    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "precision": "fp16"},
+    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "precision": "fp16"},
+    {"d_model": 768, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000, "precision": "fp16"},
+    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "precision": "bf16"},
+    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "precision": "bf16"},
+    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "precision": "bf16"},
+    {"d_model": 768, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000, "precision": "bf16"},
+    # — architecture spread within the transformer family (all fp32) —
+    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "nhead": 8},
+    {"d_model": 512, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2600, "nhead": 2},
+    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 1100, "dim_feedforward": 3072},
+    {"d_model": 512, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 900,  "dim_feedforward": 4096},
+    {"d_model": 256, "batch_size": 8,  "seq_len": 512, "num_layers": 3, "steps": 1500},
+    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "optimizer": "sgd"},
+    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "optimizer": "sgd"},
 ]
 
 DEFAULT_OUTPUT        = "eval_results.txt"
@@ -112,8 +138,19 @@ TARGET_ERR_PCT        = 10.0
 
 
 def config_label(cfg):
-    return (f"d{cfg['d_model']}_b{cfg['batch_size']}"
-            f"_s{cfg['seq_len']}_L{cfg['num_layers']}")
+    label = (f"d{cfg['d_model']}_b{cfg['batch_size']}"
+             f"_s{cfg['seq_len']}_L{cfg['num_layers']}")
+    # Non-default axes appear as suffixes so labels stay unique + greppable.
+    if cfg.get("nhead", CONFIG_DEFAULTS["nhead"]) != CONFIG_DEFAULTS["nhead"]:
+        label += f"_h{cfg['nhead']}"
+    if (cfg.get("dim_feedforward", CONFIG_DEFAULTS["dim_feedforward"])
+            != CONFIG_DEFAULTS["dim_feedforward"]):
+        label += f"_ff{cfg['dim_feedforward']}"
+    if cfg.get("precision", CONFIG_DEFAULTS["precision"]) != CONFIG_DEFAULTS["precision"]:
+        label += f"_{cfg['precision']}"
+    if cfg.get("optimizer", CONFIG_DEFAULTS["optimizer"]) != CONFIG_DEFAULTS["optimizer"]:
+        label += f"_{cfg['optimizer']}"
+    return label
 
 
 # ── Model fitting ──────────────────────────────────────────────────────────────
@@ -344,6 +381,217 @@ def is_frontier(r):
     return r["avg_gpu_pct"] is not None and r["avg_gpu_pct"] >= FRONTIER_MIN_GPU_UTIL
 
 
+# ── Records persistence + replay (refit without rerunning the sweep) ──────────
+# A sweep costs 1-2.5 h of device time; the fits take seconds. Every sweep dumps
+# its per-run summaries to JSON so split/stability experiments replay offline via
+# --refit-from. The RAW RECORDS section of older reports is also parseable, so
+# pre-JSON sweeps (e.g. eval_results.txt from 2026-06-30) remain analyzable.
+
+# Scalar fields serialized per record — everything the gate/fit/report needs.
+RECORD_SCALAR_FIELDS = [
+    "label", "split", "returncode", "duration_s", "idle_baseline_mw",
+    "ground_truth_tf", "net_energy_j", "avg_net_power_w", "j_per_tflop",
+    "avg_raw_mw", "peak_raw_mw", "avg_gpu_pct", "avg_emc_pct",
+    "tb_moved", "avg_bytes_per_s", "n_power_samples",
+]
+
+# Workload-arg defaults, used when a config (e.g. reconstructed from an old
+# report's labels) doesn't carry a key a holdout expression asks about.
+# NOTE precision: this build's torch defaults to matmul TF32 *off*, so every
+# sweep before 2026-07-07 effectively ran fp32 matmul — "fp32" is the baseline.
+CONFIG_DEFAULTS = {"nhead": 4, "dim_feedforward": 512,
+                   "precision": "fp32", "optimizer": "adamw"}
+
+
+def dump_records_json(path, records, baseline_mw, baseline_seconds,
+                      fingerprint=None):
+    payload = {
+        "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "baseline_mw": baseline_mw,
+        "baseline_seconds": baseline_seconds,
+        "fingerprint": fingerprint,
+        "records": [
+            {**{k: r.get(k) for k in RECORD_SCALAR_FIELDS}, "config": r["config"]}
+            for r in records
+        ],
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=1)
+    print(f"Records JSON written to {path}")
+
+
+def parse_label(label):
+    """Reconstruct the config dict from a report label like d256_b16_s128_L3.
+    Suffixes beyond the core four axes (e.g. _fp16) are not recovered — JSON
+    dumps carry the full config; this is only for legacy .txt reports."""
+    m = re.match(r"d(\d+)_b(\d+)_s(\d+)_L(\d+)", label)
+    if not m:
+        raise ValueError(f"unparseable record label {label!r}")
+    d, b, s, layers = map(int, m.groups())
+    return {"d_model": d, "batch_size": b, "seq_len": s, "num_layers": layers}
+
+
+def load_records_json(path):
+    with open(path) as f:
+        payload = json.load(f)
+    return (payload["records"], payload["baseline_mw"],
+            payload["baseline_seconds"], payload.get("fingerprint"))
+
+
+def load_records_txt(path):
+    """Parse the RAW RECORDS section (and baseline header) of a written report.
+    Line format: label split net_J t_s gt_TFLOPs avg_net_W avg_gpu% avg_emc% tb_TB."""
+    with open(path) as f:
+        text = f.read()
+    m = re.search(r"Baseline\s*:\s*single startup median over (\d+)s"
+                  r"\s*=\s*([\d.]+)\s*mW", text)
+    if not m:
+        raise ValueError(f"{path}: no 'Baseline : ... = N mW' header line")
+    baseline_seconds, baseline_mw = int(m.group(1)), float(m.group(2))
+
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if l.startswith("RAW RECORDS"))
+    except StopIteration:
+        raise ValueError(f"{path}: no RAW RECORDS section")
+
+    def num(s):
+        return None if s == "NA" else float(s)
+
+    records = []
+    for line in lines[start + 1:]:
+        parts = line.split()
+        if len(parts) != 9 or parts[0].startswith("-"):
+            continue
+        label, _split, net_j, t_s, gt, anw, gpu, emc, tb = parts
+        duration = float(t_s)
+        records.append({
+            "label": label,
+            "config": parse_label(label),
+            "split": "excl",
+            "returncode": 0,
+            "duration_s": duration,
+            "idle_baseline_mw": baseline_mw,
+            "ground_truth_tf": num(gt),
+            "net_energy_j": float(net_j),
+            "avg_net_power_w": num(anw),
+            "avg_gpu_pct": num(gpu),
+            "avg_emc_pct": num(emc),
+            "tb_moved": num(tb),
+            # not in the txt format; approximate for display-only columns
+            "n_power_samples": round(duration / POLL_S),
+        })
+    if not records:
+        raise ValueError(f"{path}: RAW RECORDS section had no parseable rows")
+    return records, baseline_mw, baseline_seconds, None   # txt carries no fingerprint
+
+
+def load_records(path):
+    loader = load_records_json if path.endswith(".json") else load_records_txt
+    return loader(path)
+
+
+# ── Split construction ─────────────────────────────────────────────────────────
+
+def parse_holdout(expr):
+    """Turn 'num_layers=6' / 'd_model>=640' / 'precision=fp16' into a record
+    predicate over the config. Absent config keys fall back to CONFIG_DEFAULTS so
+    old records participate in new-axis holdouts."""
+    for op_str, op in ((">=", lambda a, b: a >= b),
+                       ("<=", lambda a, b: a <= b),
+                       ("=",  lambda a, b: a == b)):
+        if op_str in expr:
+            key, _, raw = expr.partition(op_str)
+            key, raw = key.strip(), raw.strip()
+            try:
+                val = int(raw)
+            except ValueError:
+                if op_str != "=":
+                    raise ValueError(f"holdout {expr!r}: ordered comparison"
+                                     f" needs a numeric value")
+                val = raw
+
+            def pred(r, key=key, op=op, val=val):
+                have = r["config"].get(key, CONFIG_DEFAULTS.get(key))
+                if have is None:
+                    raise KeyError(f"record {r['label']}: no config key {key!r}")
+                return op(have, val)
+            return pred
+    raise ValueError(f"unparseable holdout expression {expr!r}"
+                     f" (use key=val, key>=val, or key<=val)")
+
+
+def make_split(frontier, split_spec, seed):
+    """Return (train, test, description) for 'random' or 'holdout:<expr>'."""
+    if split_spec == "random":
+        rng = random.Random(seed)
+        shuffled = frontier[:]
+        rng.shuffle(shuffled)
+        n_train = max(2, round(len(shuffled) * TRAIN_FRACTION))
+        n_train = min(n_train, len(shuffled) - 1)   # keep >=1 held-out test
+        train, test = shuffled[:n_train], shuffled[n_train:]
+        desc = f"random, seed={seed}  ({len(train)} train / {len(test)} test)"
+    elif split_spec.startswith("holdout:"):
+        expr = split_spec[len("holdout:"):]
+        pred = parse_holdout(expr)
+        test = [r for r in frontier if pred(r)]
+        train = [r for r in frontier if not pred(r)]
+        desc = (f"holdout [{expr}]"
+                f"  ({len(train)} train / {len(test)} held-out family)")
+    else:
+        raise ValueError(f"unknown --split {split_spec!r}"
+                         f" (use 'random' or 'holdout:<expr>')")
+    if len(train) < 3 or len(test) < 1:
+        raise RuntimeError(f"split '{split_spec}' leaves {len(train)} train /"
+                           f" {len(test)} test — need >=3 train and >=1 test.")
+    return train, test, desc
+
+
+# ── Stability analysis (constants spread across resampled splits) ─────────────
+
+def run_stability(frontier, n_splits, base_seed, output_path):
+    """Fit both models on N random TRAIN subsets and report the distribution of
+    the fitted constants and held-out errors — the direct measure of how much the
+    fit is a data artifact of one particular split."""
+    base = base_seed if base_seed is not None else random.randrange(1 << 30)
+    rows = []
+    for i in range(n_splits):
+        train, test, _ = make_split(frontier, "random", base + i)
+        e2, p2 = fit_active_energy_model(train)
+        e3, c3, p3 = fit_active_energy_emc_model(train)
+        score(test, e2, p2)
+        max2, _ = err_stats(test)
+        score_emc(test, e3, c3, p3)
+        max3, _ = err_stats(test, "err_pct_emc")
+        rows.append((e2, p2, e3, c3, p3, max2, max3))
+        if (i + 1) % 25 == 0:
+            print(f"  stability: {i + 1}/{n_splits} splits done", flush=True)
+
+    names = ["E_MARGINAL_2p (J/TFLOP)", "P_OVERHEAD_2p (W)",
+             "E_MARGINAL_3p (J/TFLOP)", "E_PER_TB_3p (J/TB)", "P_OVERHEAD_3p (W)",
+             "held-out max err 2p (%)", "held-out max err 3p (%)"]
+    lines = [
+        f"STABILITY  ({n_splits} random splits over {len(frontier)} frontier"
+        f" records, base seed {base})",
+        f"  {'quantity':<26} {'mean':>10} {'sd':>9} {'min':>10} {'p10':>10}"
+        f" {'p90':>10} {'max':>10}",
+    ]
+    for name, vals in zip(names, zip(*rows)):
+        a = np.array([v for v in vals if v is not None], dtype=float)
+        lines.append(f"  {name:<26} {a.mean():>10.3f} {a.std():>9.3f}"
+                     f" {a.min():>10.3f} {np.percentile(a, 10):>10.3f}"
+                     f" {np.percentile(a, 90):>10.3f} {a.max():>10.3f}")
+    fail2 = sum(1 for r in rows if r[5] is not None and r[5] >= TARGET_ERR_PCT)
+    fail3 = sum(1 for r in rows if r[6] is not None and r[6] >= TARGET_ERR_PCT)
+    lines.append(f"  splits failing the {TARGET_ERR_PCT:.0f}% held-out target:"
+                 f"  2-param {fail2}/{n_splits}   3-param {fail3}/{n_splits}")
+    text = "\n".join(lines)
+    print("\n" + text)
+    with open(output_path, "w") as f:
+        f.write(text + "\n")
+    print(f"\nStability report written to {output_path}")
+
+
 # ── Run + report ───────────────────────────────────────────────────────────────
 
 def run_sweep(configs, idle_baseline_mw, volt_path, curr_path, ts_proc):
@@ -377,7 +625,8 @@ def run_sweep(configs, idle_baseline_mw, volt_path, curr_path, ts_proc):
 
 def write_report(train, test, frontier, sub_frontier, all_records,
                  train_fit, ship_fit, train_fit_emc, ship_fit_emc,
-                 baseline_mw, baseline_seconds, seed, output_path):
+                 baseline_mw, baseline_seconds, split_desc, output_path,
+                 fingerprint=None):
     train_e, train_p = train_fit
     ship_e, ship_p = ship_fit
     emc_available = train_fit_emc is not None and ship_fit_emc is not None
@@ -442,7 +691,7 @@ def write_report(train, test, frontier, sub_frontier, all_records,
           f" = {baseline_mw:.1f} mW")
         w(f"Frontier  : scored on runs with avg GPU util >= "
           f"{FRONTIER_MIN_GPU_UTIL:.0f}%  ({len(frontier)} of {len(frontier)+len(sub_frontier)} valid)")
-        w(f"Split     : random, seed={seed}  ({len(train)} train / {len(test)} test)")
+        w(f"Split     : {split_desc}")
         if not emc_available:
             w("EMC term  : UNAVAILABLE (no actmon tb_moved for frontier runs;"
               " is the sudoers actmon_reader configured?) — 2-param only")
@@ -517,6 +766,35 @@ def write_report(train, test, frontier, sub_frontier, all_records,
               f" {ship_mean_emc:.2f}%   ({len(frontier)} runs)")
         w()
 
+        # Per-precision breakdown of the (precision-blind) ship fit. The monitor
+        # cannot observe a workload's precision, so one fit must cover all of
+        # them — this table shows what that blindness costs per precision, and
+        # the fp32-only line preserves the original MVP scope's verdict.
+        by_prec = {}
+        for r in frontier:
+            p = r["config"].get("precision", CONFIG_DEFAULTS["precision"])
+            by_prec.setdefault(p, []).append(r)
+        if len(by_prec) > 1:
+            w("BY PRECISION  (ship fit is precision-blind; errors per precision)")
+            w("-" * 82)
+            for p in sorted(by_prec):
+                recs = by_prec[p]
+                m2, a2 = err_stats(recs)
+                line = (f"  {p:<6} n={len(recs):<3}"
+                        f" 2p max {m2:6.2f}%  mean {a2:6.2f}%")
+                if emc_available:
+                    m3, a3 = err_stats(recs, "err_pct_emc")
+                    if m3 is not None:
+                        line += f"   3p max {m3:6.2f}%  mean {a3:6.2f}%"
+                w(line)
+            base = by_prec.get(CONFIG_DEFAULTS["precision"])
+            if base:
+                m2, _ = err_stats(base)
+                w(f"  [fp32-only subset] max err {m2:.2f}% —"
+                  f" {'PASS' if m2 < TARGET_ERR_PCT else 'FAIL'} vs"
+                  f" {TARGET_ERR_PCT:.0f}% (the pre-precision MVP scope)")
+            w()
+
         # Sub-frontier: shown scored with the ship fit to make the out-of-scope
         # degradation visible. NOT part of the verdict. This is where the EMC term
         # is expected to help (off the frontier collinearity line).
@@ -549,6 +827,12 @@ def write_report(train, test, frontier, sub_frontier, all_records,
             w(f"  E_PER_TB_J               = {ship_c_emc:.3f}")
         else:
             w(f"  # E_PER_TB_J unavailable (no actmon data); leave it at 0.0")
+        if fingerprint:
+            w(f"  # Matched CALIBRATION_FINGERPRINT (paste alongside — constants")
+            w(f"  # are valid ONLY on this device + power mode):")
+            w(f"  #   device_model  : {fingerprint['device_model']}")
+            w(f"  #   l4t_release   : {fingerprint['l4t_release']}")
+            w(f"  #   nvpmodel_mode : {fingerprint['nvpmodel_mode']}")
         w()
         w("RAW RECORDS  (label split net_J t_s gt_TFLOPs avg_net_W avg_gpu% avg_emc% tb_TB)")
         w("-" * 82)
@@ -567,19 +851,10 @@ def write_report(train, test, frontier, sub_frontier, all_records,
     return passed, test_max
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--output", default=DEFAULT_OUTPUT,
-                        help=f"Output report path (default: {DEFAULT_OUTPUT})")
-    parser.add_argument("--baseline-seconds", type=int, default=BASELINE_SECONDS,
-                        help=f"Single startup idle baseline duration"
-                             f" (default: {BASELINE_SECONDS})")
-    parser.add_argument("--seed", type=int, default=None,
-                        help="Seed for the random TRAIN/TEST split"
-                             " (default: random each run; the chosen seed is printed)")
-    args = parser.parse_args()
-
+def run_sweep_session(args):
+    """The device-bound half: sensors, single idle baseline, full workload sweep.
+    Returns (records, idle_baseline_mw). Dumps the records JSON before returning
+    so a crash later in analysis never loses the sweep."""
     if os.geteuid() == 0:
         print("ERROR: do not run as root. INA3221 sysfs is world-readable and "
               "CUDA needs the regular user's venv. Run without sudo.")
@@ -614,70 +889,127 @@ def main():
               f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
               f"  — shared by ALL workloads", flush=True)
 
-        # ── Run the full workload pool against that one baseline ──────────────
-        records = run_sweep(CONFIGS, idle_baseline_mw, volt_path, curr_path, ts_proc)
-
-        valid_recs = valid(records)
-        frontier = [r for r in valid_recs if is_frontier(r)]
-        sub_frontier = [r for r in valid_recs if not is_frontier(r)]
-        for r in sub_frontier:
-            r["split"] = "sub"
-        print(f"\nFrontier runs (util >= {FRONTIER_MIN_GPU_UTIL:.0f}%): "
-              f"{len(frontier)} of {len(valid_recs)} valid")
-        if len(frontier) < 3:
-            print(f"ERROR: only {len(frontier)} frontier runs — need >=3 to split"
-                  f" and fit. Adjust CONFIGS toward higher utilization.")
-            sys.exit(1)
-
-        # ── Randomized TRAIN/TEST split within the frontier subset ────────────
-        seed = args.seed if args.seed is not None else random.randrange(1 << 30)
-        rng = random.Random(seed)
-        shuffled = frontier[:]
-        rng.shuffle(shuffled)
-        n_train = max(2, round(len(shuffled) * TRAIN_FRACTION))
-        n_train = min(n_train, len(shuffled) - 1)   # keep >=1 held-out test
-        train, test = shuffled[:n_train], shuffled[n_train:]
-        for r in train:
-            r["split"] = "train"
-        for r in test:
-            r["split"] = "test"
-        print(f"Random split (seed={seed}): {len(train)} train / {len(test)} test")
-        print(f"  TRAIN: {', '.join(sorted(r['label'] for r in train))}")
-        print(f"  TEST : {', '.join(sorted(r['label'] for r in test))}")
-
-        train_fit = fit_active_energy_model(train)           # for validation
-        ship_fit = fit_active_energy_model(frontier)         # for deployment
-        print(f"\nValidation fit (TRAIN): E_MARGINAL={train_fit[0]:.4f} J/TFLOP,"
-              f" P_OVERHEAD={train_fit[1]:.4f} W")
-        print(f"Ship fit (ALL frontier): E_MARGINAL={ship_fit[0]:.4f} J/TFLOP,"
-              f" P_OVERHEAD={ship_fit[1]:.4f} W")
-
-        # 3-param / EMC fit, in parallel. actmon bytes are captured for every run
-        # (run_workload raises if the reader yields nothing), so a missing tb_moved
-        # here is an unexpected hard error — we do NOT silently report 2-param only.
-        missing_tb = [r["label"] for r in frontier if r.get("tb_moved") is None]
-        if missing_tb:
-            raise RuntimeError(f"frontier runs missing tb_moved: {missing_tb} — "
-                               f"actmon capture failed for them.")
-        train_fit_emc = fit_active_energy_emc_model(train)
-        ship_fit_emc = fit_active_energy_emc_model(frontier)
-        print(f"Validation fit EMC (TRAIN): E_MARGINAL={train_fit_emc[0]:.4f},"
-              f" E_PER_TB={train_fit_emc[1]:.4f}, P_OVERHEAD={train_fit_emc[2]:.4f}")
-        print(f"Ship fit EMC (ALL frontier): E_MARGINAL={ship_fit_emc[0]:.4f},"
-              f" E_PER_TB={ship_fit_emc[1]:.4f}, P_OVERHEAD={ship_fit_emc[2]:.4f}")
-
-        passed, test_max = write_report(train, test, frontier, sub_frontier,
-                                        records, train_fit, ship_fit,
-                                        train_fit_emc, ship_fit_emc,
-                                        idle_baseline_mw, args.baseline_seconds,
-                                        seed, args.output)
-        verdict = "PASS" if passed else "FAIL"
-        tm = f"{test_max:.2f}%" if test_max is not None else "N/A"
-        print(f"\n{verdict}: held-out frontier max error = {tm} "
-              f"(target < {TARGET_ERR_PCT:.0f}%)  [seed={seed}]")
-        sys.exit(0 if passed else 2)
+        # ── Run the workload pool against that one baseline ───────────────────
+        configs = CONFIGS
+        if args.pool == "fp32":
+            configs = [c for c in CONFIGS
+                       if c.get("precision", "fp32") == "fp32"]
+            print(f"Pool: fp32-only — {len(configs)} of {len(CONFIGS)} configs")
+        records = run_sweep(configs, idle_baseline_mw, volt_path, curr_path, ts_proc)
     finally:
         stop_tegrastats(ts_proc)
+
+    # Fingerprint the device + power mode this sweep (and thus any constants it
+    # recommends) is matched to.
+    fingerprint = detect_flops.live_fingerprint()
+    records_json = (args.records_json
+                    or os.path.splitext(args.output)[0] + "_records.json")
+    dump_records_json(records_json, records, idle_baseline_mw,
+                      args.baseline_seconds, fingerprint)
+    return records, idle_baseline_mw, fingerprint
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--output", default=DEFAULT_OUTPUT,
+                        help=f"Output report path (default: {DEFAULT_OUTPUT})")
+    parser.add_argument("--baseline-seconds", type=int, default=BASELINE_SECONDS,
+                        help=f"Single startup idle baseline duration"
+                             f" (default: {BASELINE_SECONDS})")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Seed for the random TRAIN/TEST split"
+                             " (default: random each run; the chosen seed is printed)")
+    parser.add_argument("--records-json", default=None, metavar="FILE",
+                        help="Where a sweep dumps its per-run records"
+                             " (default: <output stem>_records.json)")
+    parser.add_argument("--refit-from", default=None, metavar="FILE",
+                        help="Skip the sweep: reload records from a *_records.json"
+                             " dump or a previous report's RAW RECORDS section and"
+                             " refit/report offline")
+    parser.add_argument("--split", default="random",
+                        help="TRAIN/TEST split: 'random' or 'holdout:<key><op><val>'"
+                             " with op in {=, >=, <=} over workload-config keys,"
+                             " e.g. holdout:num_layers=6, holdout:d_model>=640,"
+                             " holdout:precision=fp16")
+    parser.add_argument("--stability", type=int, default=0, metavar="N",
+                        help="Instead of one split/report: run N random splits over"
+                             " the frontier records and report the spread of fitted"
+                             " constants and held-out errors")
+    parser.add_argument("--pool", default="all", choices=["all", "fp32"],
+                        help="Which CONFIGS to sweep: 'fp32' drops the tf32/fp16/"
+                             "bf16 precision variants (e.g. for a power-mode"
+                             " replication run)")
+    args = parser.parse_args()
+
+    if args.refit_from:
+        records, idle_baseline_mw, baseline_seconds, fingerprint = \
+            load_records(args.refit_from)
+        print(f"Loaded {len(records)} records from {args.refit_from}"
+              f"  (baseline {idle_baseline_mw:.1f} mW over {baseline_seconds}s)")
+    else:
+        records, idle_baseline_mw, fingerprint = run_sweep_session(args)
+        baseline_seconds = args.baseline_seconds
+
+    # ── Frontier gate ──────────────────────────────────────────────────────────
+    valid_recs = valid(records)
+    frontier = [r for r in valid_recs if is_frontier(r)]
+    sub_frontier = [r for r in valid_recs if not is_frontier(r)]
+    for r in sub_frontier:
+        r["split"] = "sub"
+    print(f"\nFrontier runs (util >= {FRONTIER_MIN_GPU_UTIL:.0f}%): "
+          f"{len(frontier)} of {len(valid_recs)} valid")
+    if len(frontier) < 3:
+        print(f"ERROR: only {len(frontier)} frontier runs — need >=3 to split"
+              f" and fit. Adjust CONFIGS toward higher utilization.")
+        sys.exit(1)
+
+    # The EMC fits/report need bytes on every frontier run; run_workload raises
+    # per-run, so a hole here means a corrupt/legacy records file — hard error.
+    missing_tb = [r["label"] for r in frontier if r.get("tb_moved") is None]
+    if missing_tb:
+        raise RuntimeError(f"frontier runs missing tb_moved: {missing_tb} — "
+                           f"actmon capture failed for them.")
+
+    if args.stability:
+        run_stability(frontier, args.stability, args.seed, args.output)
+        sys.exit(0)
+
+    # ── TRAIN/TEST split within the frontier subset ────────────────────────────
+    seed = args.seed if args.seed is not None else random.randrange(1 << 30)
+    train, test, split_desc = make_split(frontier, args.split, seed)
+    for r in train:
+        r["split"] = "train"
+    for r in test:
+        r["split"] = "test"
+    print(f"Split: {split_desc}")
+    print(f"  TRAIN: {', '.join(sorted(r['label'] for r in train))}")
+    print(f"  TEST : {', '.join(sorted(r['label'] for r in test))}")
+
+    train_fit = fit_active_energy_model(train)           # for validation
+    ship_fit = fit_active_energy_model(frontier)         # for deployment
+    print(f"\nValidation fit (TRAIN): E_MARGINAL={train_fit[0]:.4f} J/TFLOP,"
+          f" P_OVERHEAD={train_fit[1]:.4f} W")
+    print(f"Ship fit (ALL frontier): E_MARGINAL={ship_fit[0]:.4f} J/TFLOP,"
+          f" P_OVERHEAD={ship_fit[1]:.4f} W")
+
+    train_fit_emc = fit_active_energy_emc_model(train)
+    ship_fit_emc = fit_active_energy_emc_model(frontier)
+    print(f"Validation fit EMC (TRAIN): E_MARGINAL={train_fit_emc[0]:.4f},"
+          f" E_PER_TB={train_fit_emc[1]:.4f}, P_OVERHEAD={train_fit_emc[2]:.4f}")
+    print(f"Ship fit EMC (ALL frontier): E_MARGINAL={ship_fit_emc[0]:.4f},"
+          f" E_PER_TB={ship_fit_emc[1]:.4f}, P_OVERHEAD={ship_fit_emc[2]:.4f}")
+
+    passed, test_max = write_report(train, test, frontier, sub_frontier,
+                                    records, train_fit, ship_fit,
+                                    train_fit_emc, ship_fit_emc,
+                                    idle_baseline_mw, baseline_seconds,
+                                    split_desc, args.output, fingerprint)
+    verdict = "PASS" if passed else "FAIL"
+    tm = f"{test_max:.2f}%" if test_max is not None else "N/A"
+    print(f"\n{verdict}: held-out frontier max error = {tm} "
+          f"(target < {TARGET_ERR_PCT:.0f}%)  [split: {split_desc}]")
+    sys.exit(0 if passed else 2)
 
 
 if __name__ == "__main__":

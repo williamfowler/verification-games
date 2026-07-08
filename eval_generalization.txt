@@ -1,0 +1,187 @@
+==================================================================================
+eval_generalization.txt — Offline generalization analysis of the 2026-06-30 sweep
+Generated : 2026-07-07, via eval_power_monitor.py --refit-from eval_results.txt
+Data      : 14 frontier records (>=80% GPU util), single 642.0 mW baseline
+Tools     : --split holdout:<expr> (family holdouts) and --stability N
+==================================================================================
+
+MOTIVATION
+----------
+The shipped PASS (held-out max err 8.40%, seed 12345) is a *random-split* result:
+train and test are interpolation draws from one workload family. These analyses
+ask two harder questions using the same measured records, no new sweeps:
+  1. Family holdouts — does the fit extrapolate to a config family it never saw?
+  2. Stability — how much do the fitted constants and the PASS/FAIL verdict
+     depend on which random split you happened to draw?
+
+1. FAMILY HOLDOUTS  (entire family held out, fit on the rest)
+----------------------------------------------------------------------------------
+  held-out family      n_test   2p max err   2p mean   3p max err   3p mean
+  --------------------------------------------------------------------------
+  num_layers=6            4        5.38%       2.87%      3.77%       2.53%
+  seq_len=256             4        8.53%       6.37%      9.13%       6.26%
+  d_model>=640            4        9.55%       3.83%     21.70%      10.20%
+  batch_size=16           7        9.77%       4.60%      9.43%       4.11%
+  d_model<=256            3        9.83%       9.41%      9.15%       8.19%
+
+  Verdict (2-param): all five families stay under 10%, i.e. the frontier-regime
+  energy model DOES extrapolate across the axes measured so far — but three of
+  five land within 0.5 pt of the line, and d_model<=256 is systematically ~9%
+  off on ALL its runs (mean 9.4%), i.e. a family-level bias, not noise.
+
+  Verdict (3-param/EMC): FAILS the d_model>=640 holdout at 21.7%. When the
+  high-d_model (high arithmetic-intensity) runs are unseen, the blind-fitted
+  E_PER_TB_J extrapolates badly — direct evidence the byte coefficient is not
+  determined by this pool (see conditioning diagnostic in eval_results.txt:
+  corr(gt,tb)=0.912, cond=1.3e8).
+
+2. STABILITY  (200 random splits, base seed 1000)
+----------------------------------------------------------------------------------
+  quantity                         mean        sd        min        p10        p90        max
+  E_MARGINAL_2p (J/TFLOP)         6.269     0.623      5.373      5.447      7.101      7.719
+  P_OVERHEAD_2p (W)               3.432     0.411      2.500      2.909      4.000      4.000
+  E_MARGINAL_3p (J/TFLOP)         5.022     0.763      3.389      3.874      5.968      6.461
+  E_PER_TB_3p (J/TB)           3722.889  1411.625   1297.174   2080.720   5622.709   8580.923
+  P_OVERHEAD_3p (W)               2.307     1.047      0.000      1.103      3.989      4.000
+  held-out max err 2p (%)         9.121     1.426      3.556      7.372     10.944     12.567
+  held-out max err 3p (%)        12.272     4.935      3.921      7.765     19.816     29.064
+  splits failing the 10% held-out target:  2-param 46/200   3-param 120/200
+
+  Findings:
+  * The PASS is split-dependent: 23% of random splits fail the 10% target with
+    the 2-param model (60% with the 3-param). The shipped seed-12345 PASS at
+    8.40% sits near the middle of a 3.6%-12.6% distribution.
+  * The 2-param constants are only loosely pinned: E_MARGINAL spans 5.37-7.72
+    J/TFLOP (+/-19% around the shipped 6.23) and P_OVERHEAD spans 2.50-4.00 W.
+    P_OVERHEAD hits the 4.0 W search ceiling (P_OVERHEAD_MAX_W) in the upper
+    tail — on small train subsets the LOO objective can still chase the bound.
+  * E_PER_TB_J is effectively unidentified on benign data: 1297-8581 J/TB
+    (6.6x spread; sd ~38% of mean). Its shipped value (3857.9) is the center of
+    a very wide distribution, consistent with the promotion note ("weakly
+    determined") — and with the d_model>=640 holdout failure above.
+
+INTERPRETATION
+--------------
+* The 2-param frontier estimator is more robust than the skeptical prior
+  suggested — family extrapolation holds — but its 10% margin is thin, and the
+  single-split PASS overstates confidence (~1 in 4 resampled splits fail).
+  A fairer headline for the MVP is "typically ~9% held-out max error on
+  frontier transformer runs, with occasional splits up to ~12.6%".
+* The overhead/marginal decomposition (and therefore any physical reading of
+  the constants) is NOT trustworthy: the two parameters trade off across
+  splits. Only their combined prediction on frontier-like runs is stable.
+* The EMC/3-param model, on benign data alone, is strictly less stable than
+  the 2-param model. Its value must be adversarial (catching off-line
+  workloads, see adversarial probe) — it should not be sold as an accuracy
+  improvement, and its constants should be treated as provisional until fit
+  on data with real arithmetic-intensity spread.
+
+REPRODUCE
+---------
+  .venv/bin/python3 eval_power_monitor.py --refit-from eval_results.txt \
+      --split holdout:num_layers=6            # (or d_model>=640, etc.)
+  .venv/bin/python3 eval_power_monitor.py --refit-from eval_results.txt \
+      --stability 200 --seed 1000
+
+==================================================================================
+UPDATE 2026-07-07 — v2 sweep (eval_results_v2.txt): precision + architecture axes
+==================================================================================
+The 38-config v2 sweep added nhead {2,8}, dim_feedforward {3072,4096}, seq 512,
+SGD, and a PRECISION axis (fp32 baseline / tf32 / fp16 / bf16), fit
+precision-BLIND (the monitor cannot observe precision). Same 642.0 mW baseline.
+
+PRECISION BREAKS THE ESTIMATOR (the headline)
+---------------------------------------------
+* The blind fit over all 23 frontier runs FAILS: held-out max err 16.37%; the
+  two tf32 outliers also degenerate the fit itself (P_OVERHEAD driven to the
+  0 W boundary, E_MARGINAL 6.2 -> 10.9), dragging even fp32 runs to 14.8%.
+* tf32 runs (tensor cores ON): ~2x more FLOPs/joule than fp32 -> read ~50% LOW.
+* fp16/bf16 runs at this model scale drop to ~60% GPU util — BELOW the frontier
+  gate — while doing up to 146 true TFLOPs, and read ~70% LOW vs fp32 constants.
+  Precision is therefore a working red-team evasion channel on BOTH axes: it
+  defeats the util gate and the energy conversion (underestimates of 2-3.5x, in
+  the verifier-dangerous direction). This is physics, not mis-calibration: a
+  joule meter cannot see precision. Estimates must be read as a LOWER BOUND
+  w.r.t. precision.
+
+FP32-ONLY SUBSET (21 frontier runs, incl. all new architecture axes)
+--------------------------------------------------------------------
+* Random split (seed 12345): PASS, held-out max 8.95%; ship fit max 8.82%.
+* The new architecture axes are benign: holdout errors — optimizer=sgd 1.93%,
+  seq_len>=512 4.32%, num_layers=6 3.46%; marginal fails at
+  dim_feedforward>=3072 (10.06%) and the persistent d_model<=256 bias (10.78%).
+* Stability over 200 splits IMPROVED vs v1: E_MARGINAL 5.29-6.81 (sd 0.37 vs
+  0.62), split-failure rate 13.5% (vs 23%). Architecture diversity helped
+  identify the fit. 3-param remains unstable (59% of splits fail).
+* Constants updated 2026-07-07 to the v2 fp32 ship fit (5.72 J/TFLOP, 3.75 W;
+  EMC 5.61 / 4621.7 / 1.463): the old constants let one v2 run breach 10%
+  (10.44%), the new fit holds all 21 at <=8.82%.
+
+ACTMON BYTE SCALE (power_calibration/actmon_scale_bench.py, 2026-07-07)
+-----------------------------------------------------------------------
+* Measured scale factor k = 0.0133 actmon-TB per true TB (counter reads ~1.3%
+  of true traffic; linear, idle background negligible).
+* The fitted E_PER_TB_J converts to 61.5 J per TRUE TB — inside the LPDDR5
+  physical ballpark (~50-150 J/TB). The blind byte coefficient is physically
+  sensible, with the caveat that a pure-streaming spoof's TOTAL energy is
+  ~40 J/TB, slightly below it — which is why estimate_tflops_emc over-corrects
+  spoofs to large negative values (fine for a tripwire, wrong as a meter).
+
+REPRODUCE (v2)
+--------------
+  .venv/bin/python3 eval_power_monitor.py --refit-from eval_results_v2_records.json \
+      --split holdout:precision=tf32          # or --stability 200, etc.
+  # fp32-only analyses: filter records to precision==fp32 first (see
+  # PROJECT_STATUS.md); the shipped constants come from that subset.
+
+==================================================================================
+UPDATE 2026-07-08 — 15W power-mode replication (pseudo-other-hardware test)
+==================================================================================
+The full calibration methodology was re-run from scratch in nvpmodel mode 0
+(15W) as if on new hardware: fresh idle baseline (642.6 mW), fp32 pool
+(26 configs, 22 cleared the frontier gate), fresh fit, fresh verdict
+(eval_results_15w.txt / eval_results_15w_records.json).
+
+DOES THE METHODOLOGY REPLICATE?  YES (with the same soft-PASS caveat)
+---------------------------------------------------------------------
+* Fresh 15W fit: held-out max err 9.20% PASS; all 22 frontier runs <= 8.92%.
+* Fresh constants differ hugely from 25W — E_MARGINAL 3.92 vs 5.72 J/TFLOP
+  (the 15W operating point is ~30% more FLOP-efficient; DVFS), P_OVERHEAD 2.05
+  vs 3.75 W. Same methodology, completely different numbers: the procedure is
+  what transfers, not the constants.
+
+DO THE 25W CONSTANTS TRANSFER?  NO — CATASTROPHICALLY
+------------------------------------------------------
+* 25W constants scored on the 22 15W frontier runs: signed error mean -95%
+  (range -118% to -87%; some estimates go negative). An unrecalibrated monitor
+  on a different power mode is blind, not merely biased. This is the concrete
+  justification for the CALIBRATION_FINGERPRINT startup guard, which flags
+  exactly this condition (the 15W records' fingerprint reads nvpmodel_mode=15W).
+
+STABILITY INVERSION AT 15W (new finding)
+----------------------------------------
+  quantity                         mean        sd        min        p10        p90        max
+  E_MARGINAL_2p (J/TFLOP)         3.743     0.600      2.616      2.782      4.374      4.907
+  P_OVERHEAD_2p (W)               2.132     0.284      1.625      1.838      2.588      2.663
+  E_MARGINAL_3p (J/TFLOP)         4.453     0.303      3.266      4.151      4.761      5.211
+  E_PER_TB_3p (J/TB)           3910.430   699.036   1158.580   3111.872   4789.957   5317.610
+  P_OVERHEAD_3p (W)               0.439     0.351      0.000      0.000      0.763      1.900
+  held-out max err 2p (%)        12.532     5.515      4.151      8.093     21.711     25.988
+  held-out max err 3p (%)         6.374     1.299      4.150      4.955      7.656     12.365
+  splits failing the 10% target:  2-param 82/200 (41%)   3-param 4/200 (2%)
+
+* At 25W the byte term was a collinear passenger (59% split-failure); at 15W it
+  is the BETTER model by a wide margin (2% vs 41% failure, mean held-out 6.4%
+  vs 12.5%, and a tighter E_PER_TB distribution). Interpretation: in the
+  compressed 15W power band, per-workload arithmetic-intensity differences are
+  a larger fraction of the energy signal, so the byte term explains real
+  variance. The 2-param single-split PASS (9.20%) sits on the lucky side of a
+  12.5%-mean distribution — at 15W the EMC estimator, not the 2-param one,
+  would be the meter of choice. Role assignments are power-mode-specific.
+
+REPRODUCE (15W)
+---------------
+  sudo nvpmodel -m 0    # then:
+  .venv/bin/python3 eval_power_monitor.py --pool fp32 --seed 12345 --output eval_results_15w.txt
+  .venv/bin/python3 eval_power_monitor.py --refit-from eval_results_15w_records.json --stability 200 --seed 1000
+  sudo nvpmodel -m 1    # restore 25W
