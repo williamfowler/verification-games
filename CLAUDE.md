@@ -85,6 +85,6 @@ Smoke tests (no formal framework — these are the diagnostics; run before chang
 
 Typical validation: start `detect_flops.py`, run `sample_ml_workload.py` in another shell, compare the monitor's "Power estimate" to the workload's "Ground truth total".
 
-## Note on `detect_flops_old.py`
+## Note on `old/`
 
-A prior roofline-only version kept for reference. `detect_flops.py` is the current entry point; don't edit the old file unless explicitly asked.
+Superseded files live in `old/` — `detect_flops_old.py` (prior roofline-only monitor), `eval_results.txt` (the 2026-06-30 v1 sweep report; still replayable via `--refit-from old/eval_results.txt`), and `power_calibration.txt` (a 2026-05-28 report from the legacy calibrator). Don't edit them unless explicitly asked; current reports are `eval_results_v2.txt` / `eval_results_15w.txt` (+ `_records.json`).

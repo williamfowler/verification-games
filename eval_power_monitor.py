@@ -385,7 +385,7 @@ def is_frontier(r):
 # A sweep costs 1-2.5 h of device time; the fits take seconds. Every sweep dumps
 # its per-run summaries to JSON so split/stability experiments replay offline via
 # --refit-from. The RAW RECORDS section of older reports is also parseable, so
-# pre-JSON sweeps (e.g. eval_results.txt from 2026-06-30) remain analyzable.
+# pre-JSON sweeps (e.g. old/eval_results.txt from 2026-06-30) remain analyzable.
 
 # Scalar fields serialized per record — everything the gate/fit/report needs.
 RECORD_SCALAR_FIELDS = [

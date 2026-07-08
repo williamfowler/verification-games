@@ -1,6 +1,6 @@
 ==================================================================================
 eval_generalization.txt — Offline generalization analysis of the 2026-06-30 sweep
-Generated : 2026-07-07, via eval_power_monitor.py --refit-from eval_results.txt
+Generated : 2026-07-07, via eval_power_monitor.py --refit-from old/eval_results.txt
 Data      : 14 frontier records (>=80% GPU util), single 642.0 mW baseline
 Tools     : --split holdout:<expr> (family holdouts) and --stability N
 ==================================================================================
@@ -32,7 +32,7 @@ ask two harder questions using the same measured records, no new sweeps:
   Verdict (3-param/EMC): FAILS the d_model>=640 holdout at 21.7%. When the
   high-d_model (high arithmetic-intensity) runs are unseen, the blind-fitted
   E_PER_TB_J extrapolates badly — direct evidence the byte coefficient is not
-  determined by this pool (see conditioning diagnostic in eval_results.txt:
+  determined by this pool (see conditioning diagnostic in old/eval_results.txt:
   corr(gt,tb)=0.912, cond=1.3e8).
 
 2. STABILITY  (200 random splits, base seed 1000)
@@ -78,9 +78,9 @@ INTERPRETATION
 
 REPRODUCE
 ---------
-  .venv/bin/python3 eval_power_monitor.py --refit-from eval_results.txt \
+  .venv/bin/python3 eval_power_monitor.py --refit-from old/eval_results.txt \
       --split holdout:num_layers=6            # (or d_model>=640, etc.)
-  .venv/bin/python3 eval_power_monitor.py --refit-from eval_results.txt \
+  .venv/bin/python3 eval_power_monitor.py --refit-from old/eval_results.txt \
       --stability 200 --seed 1000
 
 ==================================================================================
