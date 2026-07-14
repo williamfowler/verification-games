@@ -38,6 +38,9 @@ import signal
 import sys
 import time
 
+# Intentionally duplicated from detect_flops.py: this script runs standalone
+# under `sudo -n` and must stay stdlib-only (importing detect_flops would pull
+# in jtop). Keep the two lists in sync.
 ACTMON_PRD_PATH = "/sys/kernel/debug/bpmp/debug/actmon/mc_all_last_prd_activity"
 ACTMON_AVG_PATH = "/sys/kernel/debug/bpmp/debug/actmon/mc_all_avg_activity"
 EMC_RATE_PATH   = "/sys/kernel/debug/bpmp/debug/clk/emc/rate"

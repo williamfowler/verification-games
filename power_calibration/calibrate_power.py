@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """
-calibrate_power.py — Power/FLOP calibration for detect_flops.py
+calibrate_power.py — sampling library for the calibration/eval tooling.
 
-Runs sample_ml_workload.py at several d_model sizes, samples INA3221 power
-at 2 Hz in a background thread, and computes J/TFLOP against the
-FlopCounterMode ground truth for each run.
+Provides the shared measurement plumbing: INA3221 power sampling
+(PowerSampler), DRAM-bytes sampling via the privileged actmon reader
+(BytesSampler), tegrastats GPU-utilization scraping, idle-baseline sampling
+(sample_idle), and the instrumented workload runner (run_workload) that
+integrates net energy against FlopCounterMode ground truth.
 
-Usage:
-    python3 calibrate_power.py [--output FILE]
-
-Output:
-    calibration_results.txt  (summary + raw timeseries for manual inspection)
-
-Expected runtime: 40–90 min depending on Jetson performance.
-Ensure no other GPU workloads are running before starting.
+Not a standalone tool: the calibration/accuracy entry point is
+eval_power_monitor.py (which fits the active-energy models and prints the
+RECOMMENDED CONSTANTS block for detect_flops.py). Other consumers:
+drift_test.py, adversarial_probe.py, actmon_scale_bench.py,
+writeup/capture_timeseries.py. The legacy standalone calibrator this module
+grew out of produced old/power_calibration.txt.
 """
 
-import argparse
-import glob
 import os
 import re
 import select
@@ -27,32 +25,23 @@ import threading
 import time
 from statistics import mean, median, stdev
 
-# ── INA3221 sensor ────────────────────────────────────────────────────────────
-INA3221_DRIVER = "/sys/bus/i2c/drivers/ina3221/1-0040/hwmon"
-INA3221_LABEL  = "VDD_CPU_GPU_CV"
-
 # ── Sampling ──────────────────────────────────────────────────────────────────
-POLL_S          = 0.5   # INA3221 sample interval (2 Hz)
-IDLE_BASELINE_S = 90    # quiet sampling before first workload (≥ 180 samples)
-COOLDOWN_S      = 45    # quiet sampling between workloads
+POLL_S = 0.5   # INA3221 sample interval (2 Hz)
 
-# ── Workload matrix ───────────────────────────────────────────────────────────
-# d_model spans memory-bound (128) to compute-bound (1024) on the Orin Nano.
-# Steps sized for ~150 s of active training per run (≥300 power samples) based
-# on observed step rates (~21 steps/s at d_model=128, ~7 steps/s at d_model=1024).
-# d_model=1024 is included but will be skipped gracefully if it OOMs.
-CONFIGS = [
-    {"d_model": 128,  "steps": 3000, "batch_size": 8, "seq_len": 64},
-    {"d_model": 256,  "steps": 2500, "batch_size": 8, "seq_len": 64},
-    {"d_model": 512,  "steps": 1500, "batch_size": 8, "seq_len": 64},
-    {"d_model": 1024, "steps": 500,  "batch_size": 8, "seq_len": 64},
-]
-
-DEFAULT_OUTPUT  = "calibration_results.txt"
 # This file lives in power_calibration/; the workload script and the venv are at
 # the repo root one level up.
 REPO_ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKLOAD_SCRIPT = os.path.join(REPO_ROOT, "sample_ml_workload.py")
+
+# ── INA3221 sensor ────────────────────────────────────────────────────────────
+# Canonical INA3221 constants/helpers live in detect_flops.py; re-exported here
+# so the eval/probe/drift scripts keep importing them from calibrate_power.
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+from detect_flops import (  # noqa: E402
+    INA3221_DRIVER, INA3221_LABEL, actmon_bytes_per_s, find_ina3221_paths,
+    read_power_mw,
+)
 
 
 # ── Python interpreter ────────────────────────────────────────────────────────
@@ -68,31 +57,6 @@ def find_venv_python():
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     return sys.executable
-
-
-# ── INA3221 helpers ───────────────────────────────────────────────────────────
-
-def find_ina3221_paths():
-    """Return (volt_path, curr_path) for INA3221_LABEL, or (None, None)."""
-    for hwmon in glob.glob(f"{INA3221_DRIVER}/hwmon*"):
-        for i in range(1, 5):
-            try:
-                with open(f"{hwmon}/in{i}_label") as f:
-                    if f.read().strip() == INA3221_LABEL:
-                        return f"{hwmon}/in{i}_input", f"{hwmon}/curr{i}_input"
-            except OSError:
-                continue
-    return None, None
-
-
-def read_power_mw(volt_path, curr_path):
-    """Power in mW. Raises on read error — a sensor read that should work but
-    doesn't is surfaced, not masked as None."""
-    with open(volt_path) as f:
-        mv = float(f.read().strip())
-    with open(curr_path) as f:
-        ma = float(f.read().strip())
-    return mv * ma / 1000.0
 
 
 # ── tegrastats helpers ────────────────────────────────────────────────────────
@@ -203,8 +167,7 @@ class BytesSampler:
     """
 
     def __init__(self):
-        from detect_flops import actmon_bytes_per_s  # single source of truth
-        self._to_bytes_per_s = actmon_bytes_per_s
+        self._to_bytes_per_s = actmon_bytes_per_s  # single source of truth
         self.samples = []          # (monotonic_t, bytes_per_s)
         self.available = False
         self._stop = threading.Event()
@@ -437,246 +400,3 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
         "avg_bytes_per_s":  avg_bytes_per_s,
         "n_power_samples":  len(sampler.power_samples),
     }
-
-
-# ── Report writer ─────────────────────────────────────────────────────────────
-
-def write_report(idle_samples, run_results, idle_baseline_mw, output_path):
-    idle_mw = [mw for _, mw in idle_samples]
-
-    with open(output_path, "w") as f:
-        def w(s=""):
-            f.write(s + "\n")
-
-        w("=" * 72)
-        w("detect_flops.py  —  Power Calibration Report")
-        w(f"Generated : {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        w(f"Sensor    : {INA3221_LABEL}")
-        w(f"Poll rate : {1/POLL_S:.0f} Hz  ({POLL_S}s interval)")
-        w("=" * 72)
-        w()
-
-        # ── Idle baseline ─────────────────────────────────────────────────
-        w("IDLE BASELINE  (pre-workload)")
-        w("-" * 40)
-        w(f"  Duration  : {IDLE_BASELINE_S} s")
-        w(f"  Samples   : {len(idle_mw)}")
-        w(f"  Median    : {median(idle_mw):.1f} mW")
-        w(f"  Stdev     : {stdev(idle_mw) if len(idle_mw) > 1 else 0:.1f} mW")
-        w(f"  Min/Max   : {min(idle_mw):.1f} / {max(idle_mw):.1f} mW")
-        w()
-
-        # ── Per-run detail ────────────────────────────────────────────────
-        w("WORKLOAD RUNS  (one section per config)")
-        w("-" * 72)
-        for r in run_results:
-            cfg  = r["config"]
-            ok   = r["returncode"] == 0
-            w(f"  d_model={cfg['d_model']}  steps={cfg['steps']}"
-              f"  batch={cfg['batch_size']}  seq={cfg['seq_len']}"
-              f"  exit={r['returncode']}")
-            w(f"    Duration          : {r['duration_s']:.1f} s")
-            w(f"    Power samples     : {r['n_power_samples']}"
-              f"  (active training only, excl. CUDA init)")
-            w(f"    Idle baseline     : {r['idle_baseline_mw']:.1f} mW")
-            if r["avg_raw_mw"] is not None:
-                w(f"    Avg raw power     : {r['avg_raw_mw']:.1f} mW")
-                w(f"    Peak raw power    : {r['peak_raw_mw']:.1f} mW")
-            if r["avg_net_power_w"] is not None:
-                w(f"    Avg net power     : {r['avg_net_power_w']*1000:.1f} mW"
-                  f"  ({r['avg_net_power_w']:.4f} W)")
-            w(f"    Net energy        : {r['net_energy_j']:.4f} J")
-            if r["ground_truth_tf"] is not None:
-                w(f"    Ground truth      : {r['ground_truth_tf']:.6f} TFLOPs")
-            else:
-                w("    Ground truth      : N/A  (FlopCounterMode unavailable)")
-            if r["j_per_tflop"] is not None:
-                w(f"    J / TFLOP         : {r['j_per_tflop']:.4f}")
-            else:
-                w("    J / TFLOP         : N/A")
-            if r["avg_gpu_pct"] is not None:
-                w(f"    Avg GPU util      : {r['avg_gpu_pct']:.1f}%")
-            if r["avg_emc_pct"] is not None:
-                w(f"    Avg EMC util      : {r['avg_emc_pct']:.1f}%")
-            w()
-
-        # ── Summary table ─────────────────────────────────────────────────
-        w("SUMMARY TABLE")
-        w("-" * 72)
-        hdr = (f"  {'d_model':>8}  {'steps':>6}  {'avg_net_W':>10}"
-               f"  {'net_J':>10}  {'gt_TFLOPs':>10}  {'J/TFLOP':>8}")
-        w(hdr)
-        w("  " + "-" * (len(hdr) - 2))
-        for r in run_results:
-            cfg  = r["config"]
-            anw  = f"{r['avg_net_power_w']:.4f}" if r['avg_net_power_w']  is not None else "N/A"
-            gt   = f"{r['ground_truth_tf']:.6f}"  if r['ground_truth_tf']  is not None else "N/A"
-            jpt  = f"{r['j_per_tflop']:.4f}"      if r['j_per_tflop']      is not None else "N/A"
-            w(f"  {cfg['d_model']:>8}  {cfg['steps']:>6}  {anw:>10}"
-              f"  {r['net_energy_j']:>10.4f}  {gt:>10}  {jpt:>8}")
-        w()
-
-        # ── Recommended constants ─────────────────────────────────────────
-        valid = [r for r in run_results
-                 if r["j_per_tflop"] is not None and r["avg_net_power_w"] is not None]
-        w("RECOMMENDED CALIBRATION CONSTANTS")
-        w("-" * 40)
-        if valid:
-            valid_sorted = sorted(valid, key=lambda r: r["avg_net_power_w"])
-            low_runs  = [r for r in valid_sorted if r["avg_net_power_w"] <= 2.0]
-            high_runs = [r for r in valid_sorted if r["avg_net_power_w"] >  2.0]
-
-            if low_runs:
-                low_j = mean(r["j_per_tflop"] for r in low_runs)
-                low_w = mean(r["avg_net_power_w"] for r in low_runs)
-                w(f"  POWER_CAL_LOW_J_PER_TFLOP  = {low_j:.2f}"
-                  f"   # {len(low_runs)} run(s), avg net {low_w:.2f} W")
-            if high_runs:
-                high_j = mean(r["j_per_tflop"] for r in high_runs)
-                high_w = mean(r["avg_net_power_w"] for r in high_runs)
-                w(f"  POWER_CAL_HIGH_J_PER_TFLOP = {high_j:.2f}"
-                  f"   # {len(high_runs)} run(s), avg net {high_w:.2f} W")
-
-            # Interpolation range endpoints
-            if low_runs and high_runs:
-                low_max_w  = max(r["avg_net_power_w"] for r in low_runs)
-                high_min_w = min(r["avg_net_power_w"] for r in high_runs)
-                w(f"  POWER_CAL_LOW_NET_W        = {low_max_w:.1f}")
-                w(f"  POWER_CAL_HIGH_NET_W       = {high_min_w:.1f}")
-            elif low_runs:
-                w("  # All runs fell in low-power regime; collect a heavier workload")
-                w("  # before setting POWER_CAL_HIGH_* constants.")
-            elif high_runs:
-                w("  # All runs fell in high-power regime; collect a lighter workload")
-                w("  # before setting POWER_CAL_LOW_* constants.")
-
-            w()
-            w(f"  FALLBACK_IDLE_POWER_MW     = {median(idle_mw):.0f}"
-              f"   # measured idle baseline")
-        else:
-            w("  No valid runs (FlopCounterMode unavailable or all runs failed).")
-        w()
-
-        # ── Raw timeseries ────────────────────────────────────────────────
-        w("=" * 72)
-        w("RAW POWER TIMESERIES  (for manual inspection / re-fitting)")
-        w("Columns: monotonic_t_s  power_mw  net_power_mw")
-        w("=" * 72)
-        w()
-
-        w(f"# IDLE PHASE  n={len(idle_samples)}  "
-          f"median={median(idle_mw):.1f}mW")
-        for t, mw in idle_samples:
-            w(f"  {t:.3f}  {mw:.1f}  0.0")
-        w()
-
-        for r in run_results:
-            cfg = r["config"]
-            w(f"# WORKLOAD  d_model={cfg['d_model']}  steps={cfg['steps']}"
-              f"  idle_baseline={r['idle_baseline_mw']:.1f}mW"
-              f"  n={r['n_power_samples']}")
-            for t, mw in r["power_samples"]:
-                net = max(mw - r["idle_baseline_mw"], 0.0)
-                w(f"  {t:.3f}  {mw:.1f}  {net:.1f}")
-            w()
-
-    print(f"\nReport written to {output_path}")
-
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--output", default=DEFAULT_OUTPUT,
-                        help="Output .txt file path (default: calibration_results.txt)")
-    args = parser.parse_args()
-
-    if os.geteuid() == 0:
-        print("ERROR: do not run as root. The INA3221 sysfs files are "
-              "world-readable (perm=444) and CUDA is only accessible to "
-              "the regular user. Run without sudo:")
-        print("  python3 calibrate_power.py [--output FILE]")
-        sys.exit(1)
-
-    # Sanity checks
-    volt_path, curr_path = find_ina3221_paths()
-    if volt_path is None:
-        print(f"ERROR: INA3221 label '{INA3221_LABEL}' not found under {INA3221_DRIVER}")
-        sys.exit(1)
-    print(f"INA3221 sensor : {INA3221_LABEL}")
-    print(f"  volt_path    : {volt_path}")
-    print(f"  curr_path    : {curr_path}")
-
-    if not os.path.exists(WORKLOAD_SCRIPT):
-        print(f"ERROR: workload script not found: {WORKLOAD_SCRIPT}")
-        sys.exit(1)
-
-    ts_proc = start_tegrastats(int(POLL_S * 1000))
-    if ts_proc:
-        print("tegrastats started for GPU/EMC utilization.")
-    else:
-        print("Warning: tegrastats unavailable — GPU/EMC columns will be empty.")
-
-    # Verify sensor is readable
-    test_mw = read_power_mw(volt_path, curr_path)
-    if test_mw is None:
-        print("ERROR: failed to read INA3221 — check that the hwmon sysfs path exists.")
-        stop_tegrastats(ts_proc)
-        sys.exit(1)
-    print(f"Sensor test    : {test_mw:.1f} mW  OK")
-    print()
-
-    try:
-        # ── Phase 0: idle baseline ────────────────────────────────────────
-        print(f"Phase 0: {IDLE_BASELINE_S}s idle baseline"
-              f" ({int(IDLE_BASELINE_S / POLL_S)} expected samples)")
-        print("  Ensure no GPU workloads are running.", flush=True)
-        idle_samples     = sample_idle(IDLE_BASELINE_S, volt_path, curr_path,
-                                       ts_proc, "baseline")
-        idle_mw_values   = [mw for _, mw in idle_samples]
-        idle_baseline_mw = median(idle_mw_values)
-        print(f"  Idle baseline set to {idle_baseline_mw:.1f} mW"
-              f"  (n={len(idle_samples)}"
-              f"  stdev={stdev(idle_mw_values) if len(idle_mw_values) > 1 else 0:.1f} mW)")
-
-        run_results  = []
-        all_quiet_mw = list(idle_mw_values)
-
-        # ── Phases 1–N: workload runs ─────────────────────────────────────
-        for i, config in enumerate(CONFIGS):
-            print(f"\nRun {i+1}/{len(CONFIGS)}: d_model={config['d_model']}"
-                  f"  steps={config['steps']}", flush=True)
-
-            if i > 0:
-                print(f"  {COOLDOWN_S}s cooldown before next run ...", flush=True)
-                cool = sample_idle(COOLDOWN_S, volt_path, curr_path,
-                                   ts_proc, "cooldown")
-                all_quiet_mw.extend(mw for _, mw in cool)
-                idle_baseline_mw = median(all_quiet_mw)
-                print(f"  Updated idle baseline: {idle_baseline_mw:.1f} mW"
-                      f"  (n={len(all_quiet_mw)} total quiet samples)")
-
-            result = run_workload(config, idle_baseline_mw,
-                                  volt_path, curr_path, ts_proc)
-            run_results.append(result)
-
-            if result["j_per_tflop"] is not None:
-                print(f"\n  -> J/TFLOP : {result['j_per_tflop']:.4f}"
-                      f"  |  avg net {result['avg_net_power_w']*1000:.0f} mW"
-                      f"  |  GT {result['ground_truth_tf']:.4f} TFLOPs"
-                      f"  |  {result['n_power_samples']} power samples", flush=True)
-            else:
-                print(f"\n  -> J/TFLOP : N/A  (GT missing or net energy zero)",
-                      flush=True)
-
-        # ── Write report ──────────────────────────────────────────────────
-        print(f"\nWriting report to {args.output} ...", flush=True)
-        write_report(idle_samples, run_results, idle_baseline_mw, args.output)
-
-    finally:
-        stop_tegrastats(ts_proc)
-
-
-if __name__ == "__main__":
-    main()

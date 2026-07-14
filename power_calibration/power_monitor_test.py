@@ -1,6 +1,9 @@
 """
 power_monitor_test.py — INA3221 sensor sanity check
 Reads VDD_CPU_GPU_CV power (V × I) from hwmon sysfs and prints 10 samples.
+
+Deliberately self-contained (constants/helpers duplicated from detect_flops.py):
+a smoke test for the sensor shouldn't depend on the code it sanity-checks.
 """
 
 import time

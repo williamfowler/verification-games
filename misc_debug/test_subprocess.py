@@ -8,6 +8,10 @@ Tests:
 
 Run as:  python3 test_subprocess.py        (preferred)
          sudo python3 test_subprocess.py   (to compare)
+
+Deliberately self-contained (constants/helpers duplicated from detect_flops.py /
+calibrate_power.py): a diagnostic for sensor permissions and subprocess launch
+shouldn't depend on the code it sanity-checks.
 """
 
 import glob

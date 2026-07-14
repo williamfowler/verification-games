@@ -157,6 +157,8 @@ def run_training(steps, batch_size, seq_len, d_model,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    # KEEP IN SYNC: eval_power_monitor.py's CONFIG_DEFAULTS mirrors the
+    # nhead/dim_feedforward/precision/optimizer defaults below.
     parser.add_argument("--steps",           type=int, default=150)
     parser.add_argument("--batch-size",      type=int, default=8)
     parser.add_argument("--seq-len",         type=int, default=64)

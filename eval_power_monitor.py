@@ -166,6 +166,48 @@ def _e_marginal_at(E, t, gt, p):
     return m if m > 0 else None
 
 
+def _best_p_overhead_loo(n, gt, solve_at, predict_at, loo_min_n):
+    """
+    Shared p_overhead search used by both fit functions: sweep a fixed grid of
+    candidate p_overhead values and pick the one whose (n-1)-point refit best
+    predicts each held-out run (leave-one-out, relative SSE). Falls back to
+    in-sample relative SSE when there are fewer than loo_min_n points.
+
+    solve_at(sel, p)        -> fitted linear coefficient(s) on records[sel], or
+                               None if degenerate (that p is skipped)
+    predict_at(fit, sel, p) -> predicted TFLOPs for records[sel] under fit
+
+    `sel` is a boolean mask, an index, or slice(None). Returns the best
+    p_overhead (raises if every candidate was degenerate — no data to fit).
+    """
+    idx = np.arange(n)
+    best = None
+    for p in np.linspace(0.0, P_OVERHEAD_MAX_W, 321):
+        if n >= loo_min_n:
+            # LOO: refit on n-1 points, score the held-out one.
+            sse, ok = 0.0, True
+            for i in range(n):
+                fit = solve_at(idx != i, p)
+                if fit is None:
+                    ok = False
+                    break
+                pred = predict_at(fit, i, p)
+                sse += ((pred - gt[i]) / gt[i]) ** 2
+            if not ok:
+                continue
+            crit = sse
+        else:
+            # too few points to cross-validate — fall back to in-sample SSE
+            fit = solve_at(slice(None), p)
+            if fit is None:
+                continue
+            crit = float(np.sum(((predict_at(fit, slice(None), p) - gt) / gt) ** 2))
+        if best is None or crit < best[0]:
+            best = (crit, float(p))
+
+    return best[1]
+
+
 def fit_active_energy_model(records):
     """
     Fit E_net = e_marginal*TFLOPs + p_overhead*t_active.
@@ -185,35 +227,15 @@ def fit_active_energy_model(records):
     gt = np.array([r["ground_truth_tf"] for r in records])
     E  = np.array([r["net_energy_j"] for r in records])
     t  = np.array([r["duration_s"] for r in records])
-    n  = len(gt)
-    idx = np.arange(n)
 
-    best = None
-    for p in np.linspace(0.0, P_OVERHEAD_MAX_W, 321):
-        if n >= 4:
-            # LOO: refit e_marginal on n-1 points, score the held-out one.
-            sse, ok = 0.0, True
-            for i in range(n):
-                mask = idx != i
-                mi = _e_marginal_at(E[mask], t[mask], gt[mask], p)
-                if mi is None:
-                    ok = False
-                    break
-                pred = (E[i] - p * t[i]) / mi
-                sse += ((pred - gt[i]) / gt[i]) ** 2
-            if not ok:
-                continue
-            crit = sse
-        else:
-            # too few points to cross-validate — fall back to in-sample SSE
-            m = _e_marginal_at(E, t, gt, p)
-            if m is None:
-                continue
-            crit = float(np.sum((((E - p * t) / m - gt) / gt) ** 2))
-        if best is None or crit < best[0]:
-            best = (crit, float(p))
+    def solve_at(sel, p):
+        return _e_marginal_at(E[sel], t[sel], gt[sel], p)
 
-    p_overhead = best[1]
+    def predict_at(m, sel, p):
+        return (E[sel] - p * t[sel]) / m
+
+    p_overhead = _best_p_overhead_loo(len(gt), gt, solve_at, predict_at,
+                                      loo_min_n=4)
     e_marginal = _e_marginal_at(E, t, gt, p_overhead)
     return e_marginal, p_overhead
 
@@ -281,37 +303,17 @@ def fit_active_energy_emc_model(records):
     E  = np.array([r["net_energy_j"] for r in records])
     t  = np.array([r["duration_s"] for r in records])
     tb = np.array([r["tb_moved"] for r in records])
-    n  = len(gt)
-    idx = np.arange(n)
 
-    best = None
-    for p in np.linspace(0.0, P_OVERHEAD_MAX_W, 321):
-        if n >= 5:
-            # LOO needs n-1 >= 4 points to fit 2 linear params + score; n>=5.
-            sse, ok = 0.0, True
-            for i in range(n):
-                mask = idx != i
-                fit = _fit_linear_at(E[mask], t[mask], gt[mask], tb[mask], p)
-                if fit is None:
-                    ok = False
-                    break
-                a, c = fit
-                pred = (E[i] - c * tb[i] - p * t[i]) / a
-                sse += ((pred - gt[i]) / gt[i]) ** 2
-            if not ok:
-                continue
-            crit = sse
-        else:
-            fit = _fit_linear_at(E, t, gt, tb, p)
-            if fit is None:
-                continue
-            a, c = fit
-            pred = (E - c * tb - p * t) / a
-            crit = float(np.sum(((pred - gt) / gt) ** 2))
-        if best is None or crit < best[0]:
-            best = (crit, float(p))
+    def solve_at(sel, p):
+        return _fit_linear_at(E[sel], t[sel], gt[sel], tb[sel], p)
 
-    p_overhead = best[1]
+    def predict_at(fit, sel, p):
+        a, c = fit
+        return (E[sel] - c * tb[sel] - p * t[sel]) / a
+
+    # LOO needs n-1 >= 4 points to fit 2 linear params + score; n>=5.
+    p_overhead = _best_p_overhead_loo(len(gt), gt, solve_at, predict_at,
+                                      loo_min_n=5)
     a, c = _fit_linear_at(E, t, gt, tb, p_overhead)
     return a, c, p_overhead
 
@@ -397,6 +399,9 @@ RECORD_SCALAR_FIELDS = [
 
 # Workload-arg defaults, used when a config (e.g. reconstructed from an old
 # report's labels) doesn't carry a key a holdout expression asks about.
+# KEEP IN SYNC with sample_ml_workload.py's argparse defaults (not imported —
+# that module pulls in torch at import time); a drift here silently skews
+# labels and holdout splits.
 # NOTE precision: this build's torch defaults to matmul TF32 *off*, so every
 # sweep before 2026-07-07 effectively ran fp32 matmul — "fp32" is the baseline.
 CONFIG_DEFAULTS = {"nhead": 4, "dim_feedforward": 512,
