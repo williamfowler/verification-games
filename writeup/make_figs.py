@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(REPO, "power_calibration"))
 
 import detect_flops
 from eval_power_monitor import (fit_active_energy_model, make_split, score,
-                                err_stats)
+                                err_stats, load_bias_trials, cfg_val)
 
 # ── palette / chrome (dataviz reference, light mode) ──────────────────────────
 SURFACE = "#fcfcfb"
@@ -195,6 +195,83 @@ fig.tight_layout()
 fig.savefig(os.path.join(OUT, "fig3_evasion.png"))
 plt.close(fig)
 
+# ── Figure 6: signed LOO error by hyperparameter axis (all 25W trials) ────────
+# One dot per fp32 frontier run (leave-one-out signed error, computed by
+# eval_power_monitor.load_bias_trials — the same numbers as bias_report.txt),
+# marker shape = trial, aqua dash = level mean. Positive = overestimate.
+TRIAL_FILES = [f for f in ("eval_results_v2_records.json",
+                           "eval_results_25w_trial2_records.json",
+                           "eval_results_25w_trial3_records.json")
+               if os.path.exists(os.path.join(REPO, f))]
+trials6 = load_bias_trials([os.path.join(REPO, f) for f in TRIAL_FILES])
+n_tr = len(trials6)
+
+PANELS = [  # (config key, panel title, row)
+    ("d_model", "model width\n(d_model)", 0),
+    ("seq_len", "sequence\nlength", 0),
+    ("dim_feedforward", "FFN width", 0),
+    ("batch_size", "batch\nsize", 1),
+    ("num_layers", "layers", 1),
+    ("nhead", "attention\nheads", 1),
+    ("optimizer", "optimizer", 1),
+]
+levels6 = {key: sorted({cfg_val(r, key) for t in trials6 for r in t["pool"]})
+           for key, _title, _row in PANELS}
+rows = {0: [p for p in PANELS if p[2] == 0], 1: [p for p in PANELS if p[2] == 1]}
+
+fig = plt.figure(figsize=(7.2, 5.4), dpi=200)
+gs = fig.add_gridspec(2, 1, hspace=0.42)
+MARKERS = ["o", "s", "^"]
+label_means = {"d_model", "dim_feedforward"}   # selective direct labels
+for row_i, panels in rows.items():
+    widths = [len(levels6[k]) for k, _t, _r in panels]
+    sub = gs[row_i].subgridspec(1, len(panels), width_ratios=widths, wspace=0.14)
+    for pi, (key, title, _r) in enumerate(panels):
+        ax = fig.add_subplot(sub[pi])
+        lv = levels6[key]
+        for ti, t in enumerate(trials6):
+            xs, ys = [], []
+            for r in t["pool"]:
+                xs.append(lv.index(cfg_val(r, key))
+                          + (ti - (n_tr - 1) / 2) * 0.22)
+                ys.append(r["signed_loo"])
+            ax.scatter(xs, ys, s=16, marker=MARKERS[ti], color=BLUE,
+                       alpha=0.65, linewidths=0, zorder=3,
+                       label=f"trial {ti + 1}" if (row_i, pi) == (0, 0) else None)
+        for i, v in enumerate(lv):
+            errs6 = [r["signed_loo"] for t in trials6 for r in t["pool"]
+                     if cfg_val(r, key) == v]
+            m = float(np.mean(errs6))
+            ax.hlines(m, i - 0.34, i + 0.34, color=AQUA, lw=2.2, zorder=4)
+            if key in label_means and abs(m) >= 3:   # label only the biased levels
+                ax.text(i, m + (1.1 if m >= 0 else -1.1), f"{m:+.1f}",
+                        ha="center", va="bottom" if m >= 0 else "top",
+                        fontsize=6.8, color=INK2, zorder=5)
+        ax.axhline(0, color=BASE, lw=1, zorder=2)
+        ax.set_xticks(range(len(lv)))
+        ax.set_xticklabels([str(v) for v in lv], fontsize=7,
+                           rotation=45 if key == "dim_feedforward" else 0)
+        ax.set_xlim(-0.6, len(lv) - 0.4)
+        ax.set_ylim(-13, 13)
+        ax.grid(axis="x", visible=False)
+        ax.set_title(title, fontsize=8, color=INK2)
+        if pi == 0:
+            ax.set_ylabel("signed error (%)\n↑ over   ↓ under", fontsize=8)
+            if row_i == 0 and n_tr > 1:
+                ax.legend(fontsize=6.8, frameon=False, loc="upper right",
+                          handletextpad=0.1, borderaxespad=0.1)
+        else:
+            ax.set_yticklabels([])
+fig.suptitle("Signed FLOP-estimation error by workload hyperparameter\n"
+             f"(leave-one-out; {sum(len(t['pool']) for t in trials6)} fp32 "
+             f"frontier runs, {n_tr} independent 25 W sweeps; "
+             "green dash = level mean)",
+             fontsize=9.5, color=INK, x=0.02, ha="left")
+fig.tight_layout(rect=(0, 0, 1, 0.92))
+fig.savefig(os.path.join(OUT, "fig6_bias_by_axis.png"))
+plt.close(fig)
+
 print("stability fail rate:", fail, "%")
 print("precision ratios:", {k: round(v, 3) for k, v in prec_ratio.items()})
+print("fig6 trials:", TRIAL_FILES)
 print("figures written to", OUT)

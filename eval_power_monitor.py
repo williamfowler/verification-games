@@ -597,6 +597,282 @@ def run_stability(frontier, n_splits, base_seed, output_path):
     print(f"\nStability report written to {output_path}")
 
 
+# ── Bias analysis (signed error by hyperparameter axis, across trials) ────────
+# Answers "which workload hyperparameters push the estimator toward over- vs
+# under-estimation?" using one or more sweeps' records (each file = one trial).
+# All errors here are SIGNED: (est - gt)/gt * 100, positive = overestimate.
+#
+# Fits are fp32-scoped, matching how the shipped constants are produced: within
+# each trial the fp32 frontier runs get a leave-one-out signed error (each run
+# scored by a fit on the other fp32 frontier runs of the SAME trial, so trial-
+# level baseline/day effects cancel and a run's own leverage can't hide its
+# bias). Non-fp32 frontier runs and sub-frontier runs are scored against the
+# trial's fp32 ship fit — the deployed situation for workloads the calibration
+# pool never fits.
+
+BIAS_AXES = ["d_model", "batch_size", "seq_len", "num_layers",
+             "nhead", "dim_feedforward", "optimizer"]
+
+DEFAULT_BIAS_OUTPUT = "bias_report.txt"
+
+
+def signed_err_pct(est, gt):
+    return (est - gt) / gt * 100.0 if est is not None and gt else None
+
+
+def cfg_val(r, key):
+    v = r["config"].get(key, CONFIG_DEFAULTS.get(key))
+    if v is None:
+        raise KeyError(f"record {r['label']}: no config key {key!r}")
+    return v
+
+
+def is_fp32(r):
+    return cfg_val(r, "precision") == CONFIG_DEFAULTS["precision"]
+
+
+def attach_loo_signed(pool):
+    """Attach signed_loo (2-param) and signed_loo_emc (3-param) to every record
+    of one trial's fp32 frontier pool: run i is scored by fits on pool minus i."""
+    for i, r in enumerate(pool):
+        rest = pool[:i] + pool[i + 1:]
+        e, p = fit_active_energy_model(rest)
+        if e is None:
+            raise RuntimeError(f"degenerate LOO fit excluding {r['label']}")
+        est = detect_flops.estimate_tflops(
+            r["net_energy_j"], r["duration_s"],
+            p_overhead_w=p, e_marginal_j_per_tflop=e)
+        r["signed_loo"] = signed_err_pct(est, r["ground_truth_tf"])
+        a, c, p3 = fit_active_energy_emc_model(rest)
+        if a is None:
+            raise RuntimeError(f"degenerate LOO EMC fit excluding {r['label']}")
+        est3 = detect_flops.estimate_tflops_emc(
+            r["net_energy_j"], r["duration_s"], r["tb_moved"],
+            p_overhead_w=p3, e_marginal_j_per_tflop=a, e_per_tb_j=c)
+        r["signed_loo_emc"] = signed_err_pct(est3, r["ground_truth_tf"])
+
+
+def _spearman(x, y):
+    """Spearman rank correlation via average ranks (no scipy on this device)."""
+    def rank(a):
+        a = np.asarray(a, dtype=float)
+        order = np.argsort(a, kind="stable")
+        ranks = np.empty(len(a))
+        ranks[order] = np.arange(len(a), dtype=float)
+        # average ranks over ties
+        for v in np.unique(a):
+            m = a == v
+            ranks[m] = ranks[m].mean()
+        return ranks
+    rx, ry = rank(x), rank(y)
+    if rx.std() == 0 or ry.std() == 0:
+        return float("nan")
+    return float(np.corrcoef(rx, ry)[0, 1])
+
+
+def load_bias_trials(paths):
+    """Load each records file as one trial: gate to valid, split frontier /
+    sub-frontier, attach per-run signed errors. Returns a list of trial dicts."""
+    trials = []
+    for path in paths:
+        records, baseline_mw, _secs, _fp = load_records(path)
+        valid_recs = valid(records)
+        frontier = [r for r in valid_recs if is_frontier(r)]
+        sub = [r for r in valid_recs if not is_frontier(r)]
+        pool = [r for r in frontier if is_fp32(r)]
+        other = [r for r in frontier if not is_fp32(r)]
+        if len(pool) < 5:
+            raise RuntimeError(f"{path}: only {len(pool)} fp32 frontier runs —"
+                               f" need >=5 for LOO bias analysis")
+        missing = [r["label"] for r in pool if r.get("tb_moved") is None]
+        if missing:
+            raise RuntimeError(f"{path}: fp32 frontier runs missing tb_moved:"
+                               f" {missing}")
+        attach_loo_signed(pool)
+        ship = fit_active_energy_model(pool)      # trial's fp32 ship fit
+        for r in other + sub:
+            est = detect_flops.estimate_tflops(
+                r["net_energy_j"], r["duration_s"],
+                p_overhead_w=ship[1], e_marginal_j_per_tflop=ship[0])
+            r["signed_ship"] = signed_err_pct(est, r["ground_truth_tf"])
+        name = os.path.splitext(os.path.basename(path))[0]
+        name = name[:-len("_records")] if name.endswith("_records") else name
+        trials.append({"name": name, "path": path, "baseline_mw": baseline_mw,
+                       "pool": pool, "other_frontier": other, "sub": sub,
+                       "ship_fit": ship,
+                       "n_valid": len(valid_recs)})
+    return trials
+
+
+def run_bias_report(paths, output_path):
+    """Signed over/under-estimation analysis across one or more trials."""
+    trials = load_bias_trials(paths)
+
+    # Pool of (trial, record) for all fp32-frontier LOO errors.
+    pooled = [(t, r) for t in trials for r in t["pool"]]
+
+    lines = []
+
+    def w(s=""):
+        lines.append(s)
+
+    w("=" * 82)
+    w("eval_power_monitor.py  —  Signed Bias Report (over/under-estimation by axis)")
+    w(f"Generated : {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    w("Error     : signed (est - gt)/gt %, positive = OVERestimate")
+    w("Method    : per-trial leave-one-out over the fp32 frontier pool (2-param;")
+    w("            3-param EMC as A/B); non-fp32 + sub-frontier runs scored with")
+    w("            the trial's fp32 ship fit")
+    for t in trials:
+        e, p = t["ship_fit"]
+        w(f"Trial     : {t['name']:<28} baseline {t['baseline_mw']:7.1f} mW"
+          f"  fp32-frontier {len(t['pool']):>2}/{t['n_valid']} valid"
+          f"  ship fit e_marg={e:.2f} p_oh={p:.2f}")
+    w("=" * 82)
+    w()
+
+    # ── 1. Per-config signed LOO error across trials ──────────────────────────
+    w("1. PER-CONFIG SIGNED LOO ERROR  (fp32 frontier; one column per trial)")
+    w("-" * 82)
+    labels = sorted({r["label"] for _, r in pooled})
+    tcols = "".join(f" {'T' + str(i + 1):>7}" for i in range(len(trials)))
+    w(f"  {'config':<22}{tcols} {'mean':>7} {'sd':>6} {'3p_mean':>8}  verdict")
+    for lab in labels:
+        errs, errs3 = [], []
+        cols = ""
+        for t in trials:
+            match = [r for r in t["pool"] if r["label"] == lab]
+            if match:
+                errs.append(match[0]["signed_loo"])
+                errs3.append(match[0]["signed_loo_emc"])
+                cols += f" {match[0]['signed_loo']:>+7.2f}"
+            else:
+                cols += f" {'--':>7}"
+        m = mean(errs)
+        sd = stdev(errs) if len(errs) > 1 else float("nan")
+        m3 = mean(errs3)
+        if all(e > 0 for e in errs):
+            verdict = "OVER" if len(errs) > 1 else "over (1 trial)"
+        elif all(e < 0 for e in errs):
+            verdict = "UNDER" if len(errs) > 1 else "under (1 trial)"
+        else:
+            verdict = "mixed"
+        w(f"  {lab:<22}{cols} {m:>+7.2f} {sd:>6.2f} {m3:>+8.2f}  {verdict}")
+    w()
+
+    # Cross-trial consistency: is per-config bias reproducible, i.e. do two
+    # trials rank/sign the same configs the same way?
+    if len(trials) > 1:
+        w("  Cross-trial consistency of per-config signed error (common configs):")
+        per_trial = [{r["label"]: r["signed_loo"] for r in t["pool"]}
+                     for t in trials]
+        for i in range(len(trials)):
+            for j in range(i + 1, len(trials)):
+                common = sorted(set(per_trial[i]) & set(per_trial[j]))
+                if len(common) < 3:
+                    continue
+                xa = np.array([per_trial[i][lab] for lab in common])
+                ya = np.array([per_trial[j][lab] for lab in common])
+                pear = float(np.corrcoef(xa, ya)[0, 1])
+                same = float((xa * ya > 0).mean() * 100)
+                w(f"    T{i + 1} vs T{j + 1}: pearson r={pear:+.2f}"
+                  f"  same-sign {same:.0f}%  (n={len(common)})")
+        w()
+
+    # ── 2. Per-axis grouping (pooled fp32 frontier runs, all trials) ──────────
+    w("2. SIGNED ERROR BY HYPERPARAMETER AXIS  (pooled fp32 frontier runs,"
+      f" {len(pooled)} runs / {len(trials)} trial(s))")
+    w("-" * 82)
+    w("  NB: pool axes are not orthogonal (e.g. small d_model configs also have")
+    w("  lower arithmetic intensity) — treat level means as descriptive; the")
+    w("  family-holdout errors in eval_generalization.txt are the confound-aware")
+    w("  cross-check.")
+    w()
+    w(f"  {'axis=level':<26} {'n':>3} {'mean2p':>8} {'sd':>6} {'over%':>6}"
+      f" {'mean3p':>8}")
+    for axis in BIAS_AXES:
+        levels = {}
+        for _t, r in pooled:
+            levels.setdefault(cfg_val(r, axis), []).append(r)
+        if len(levels) < 2:
+            continue
+        w(f"  {axis}")
+        for lv in sorted(levels):
+            recs = levels[lv]
+            e2 = [r["signed_loo"] for r in recs]
+            e3 = [r["signed_loo_emc"] for r in recs]
+            sd = stdev(e2) if len(e2) > 1 else float("nan")
+            over = mean(1.0 if e > 0 else 0.0 for e in e2) * 100
+            w(f"    ={lv:<23} {len(recs):>3} {mean(e2):>+8.2f} {sd:>6.2f}"
+              f" {over:>5.0f}% {mean(e3):>+8.2f}")
+    w()
+
+    # ── 3. Mechanism diagnostic: what does signed error track? ────────────────
+    w("3. SPEARMAN CORRELATION of signed LOO error vs run properties"
+      "  (pooled fp32 frontier)")
+    w("-" * 82)
+    err2 = np.array([r["signed_loo"] for _t, r in pooled])
+    props = [(axis, [float(cfg_val(r, axis)) for _t, r in pooled])
+             for axis in BIAS_AXES if axis != "optimizer"]
+    props += [
+        ("ff_ratio (ff/d_model)", [cfg_val(r, "dim_feedforward")
+                                   / cfg_val(r, "d_model") for _t, r in pooled]),
+        ("arith intensity (gt/tb)", [r["ground_truth_tf"] / r["tb_moved"]
+                                     for _t, r in pooled]),
+        ("duration_s", [r["duration_s"] for _t, r in pooled]),
+        ("avg_gpu_pct", [r["avg_gpu_pct"] for _t, r in pooled]),
+        ("gt_TFLOPs", [r["ground_truth_tf"] for _t, r in pooled]),
+    ]
+    for name, vals in props:
+        rho = _spearman(np.array(vals), err2)
+        w(f"  {name:<26} rho = {rho:+.2f}")
+    w()
+
+    # ── 4. Non-fp32 frontier runs (precision axis; single-trial evidence) ─────
+    prec_rows = [(t, r) for t in trials for r in t["other_frontier"]]
+    if prec_rows:
+        w("4. NON-FP32 FRONTIER RUNS  (scored with each trial's fp32 ship fit —")
+        w("   the deployed, precision-blind situation)")
+        w("-" * 82)
+        by_prec = {}
+        for t, r in prec_rows:
+            by_prec.setdefault(cfg_val(r, "precision"), []).append((t, r))
+        for prec in sorted(by_prec):
+            errs = [r["signed_ship"] for _t, r in by_prec[prec]]
+            w(f"  {prec:<6} n={len(errs):<3} mean {mean(errs):>+7.2f}%"
+              f"  range [{min(errs):+.2f}, {max(errs):+.2f}]"
+              f"  — {'UNDER' if mean(errs) < 0 else 'OVER'}estimates")
+        w()
+
+    # ── 5. Sub-frontier appendix (out of scope, direction only) ───────────────
+    subs = [(t, r) for t in trials for r in t["sub"]]
+    if subs:
+        w("5. SUB-FRONTIER RUNS  (util < 80%, out of estimator scope — direction"
+          " only,")
+        w("   scored with each trial's fp32 ship fit)")
+        w("-" * 82)
+        w("  NB: with the deployed overhead term these mostly read NEGATIVE —")
+        w("  'below the frontier detection floor', not a usable signed error;")
+        w("  large negative means invisible to the monitor, not 'underestimated"
+          " by N%'.")
+        by_prec = {}
+        for t, r in subs:
+            by_prec.setdefault(cfg_val(r, "precision"), []).append(r)
+        for prec in sorted(by_prec):
+            errs = [r["signed_ship"] for r in by_prec[prec]]
+            over = mean(1.0 if e > 0 else 0.0 for e in errs) * 100
+            w(f"  {prec:<6} n={len(errs):<3} mean {mean(errs):>+8.2f}%"
+              f"  over-rate {over:3.0f}%"
+              f"  range [{min(errs):+.2f}, {max(errs):+.2f}]")
+        w()
+
+    text = "\n".join(lines)
+    print("\n" + text)
+    with open(output_path, "w") as f:
+        f.write(text + "\n")
+    print(f"\nBias report written to {output_path}")
+
+
 # ── Run + report ───────────────────────────────────────────────────────────────
 
 def run_sweep(configs, idle_baseline_mw, volt_path, curr_path, ts_proc):
@@ -941,11 +1217,23 @@ def main():
                         help="Instead of one split/report: run N random splits over"
                              " the frontier records and report the spread of fitted"
                              " constants and held-out errors")
+    parser.add_argument("--bias-report", nargs="+", default=None, metavar="FILE",
+                        help="Offline signed over/under-estimation analysis by"
+                             " hyperparameter axis. Each FILE is one trial's records"
+                             " (JSON dump or report with RAW RECORDS); errors are"
+                             " leave-one-out within each trial's fp32 frontier pool."
+                             f" Writes to --output (default {DEFAULT_BIAS_OUTPUT})")
     parser.add_argument("--pool", default="all", choices=["all", "fp32"],
                         help="Which CONFIGS to sweep: 'fp32' drops the tf32/fp16/"
                              "bf16 precision variants (e.g. for a power-mode"
                              " replication run)")
     args = parser.parse_args()
+
+    if args.bias_report:
+        out = (DEFAULT_BIAS_OUTPUT if args.output == DEFAULT_OUTPUT
+               else args.output)
+        run_bias_report(args.bias_report, out)
+        sys.exit(0)
 
     if args.refit_from:
         records, idle_baseline_mw, baseline_seconds, fingerprint = \
