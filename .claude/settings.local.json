@@ -23,7 +23,9 @@
       "Bash(timeout 4 tegrastats --interval 1000)",
       "Bash(.venv/bin/python3 *)",
       "Bash(echo \"workload PID $!\")",
-      "Bash(nvpmodel -q)"
+      "Bash(nvpmodel -q)",
+      "WebSearch",
+      "Bash(unzip -p \"Will Fowler - Estimating LLM Training FLOPs on the Nvidia Jetson Orin Nano\\(4\\).docx\" word/document.xml)"
     ]
   }
 }

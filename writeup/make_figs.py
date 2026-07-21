@@ -16,8 +16,8 @@ sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "power_calibration"))
 
 import detect_flops
-from eval_power_monitor import (fit_active_energy_model, make_split, score,
-                                err_stats, load_bias_trials, cfg_val)
+from eval_power_monitor import (fit_active_energy_emc_model, make_split,
+                                score_emc, err_stats, load_bias_trials, cfg_val)
 
 # ── palette / chrome (dataviz reference, light mode) ──────────────────────────
 SURFACE = "#fcfcfb"
@@ -54,78 +54,65 @@ def load_fp32_frontier():
 
 ALL_RECS, FRONTIER = load_fp32_frontier()
 
-# ── Figure 1: per-workload signed error (shipped constants) ───────────────────
-rows = []
-for r in FRONTIER:
-    est = detect_flops.estimate_tflops(r["net_energy_j"], r["duration_s"])
-    cfg = r["config"]
-    key = (cfg["d_model"], cfg["batch_size"], cfg["seq_len"],
-           cfg["num_layers"], r["label"])
-    rows.append((key, r["label"], cfg["d_model"],
-                 (est - r["ground_truth_tf"]) / r["ground_truth_tf"] * 100))
-rows.sort(key=lambda t: t[0])
-labels = [t[1] for t in rows]
-dmods = [t[2] for t in rows]
-errs = [t[3] for t in rows]
+# LOO trials (shared by figs 1, 6, 7): every per-run error/estimate drawn from
+# these is held out — predicted by a fit that excluded that run.
+TRIAL_FILES = [f for f in ("eval_results_v2_records.json",
+                           "eval_results_25w_trial2_records.json",
+                           "eval_results_25w_trial3_records.json")
+               if os.path.exists(os.path.join(REPO, f))]
+trials6 = load_bias_trials([os.path.join(REPO, f) for f in TRIAL_FILES])
+n_tr = len(trials6)
 
-fig, ax = plt.subplots(figsize=(7.2, 3.6), dpi=200)
-ax.bar(range(len(errs)), errs, width=0.62, color=BLUE, zorder=3)
-ax.axhline(0, color=BASE, lw=1, zorder=2)
-for y in (10, -10):
-    ax.axhline(y, color=MUTED, lw=0.9, ls=(0, (4, 3)), zorder=2)
-ax.text(-0.4, 10.4, "±10% target", ha="left", va="bottom",
-        color=INK2, fontsize=8)
-# separators + captions between d_model families
-bounds = [i for i in range(1, len(dmods)) if dmods[i] != dmods[i - 1]]
-for i in bounds:
-    ax.axvline(i - 0.5, color=GRID, lw=0.8, zorder=1)
-starts = [0] + bounds
-ends = bounds + [len(dmods)]
-for s, e in zip(starts, ends):
-    ax.text((s + e - 1) / 2, 12.3, f"d{dmods[s]}", ha="center", fontsize=8,
-            color=INK2)
-ax.set_xticks(range(len(labels)))
-ax.set_xticklabels(labels, rotation=90, fontsize=6.5)
-ax.set_ylabel("estimation error (%)")
-ax.set_ylim(-14, 14.5)
-ax.set_xlim(-0.7, len(errs) - 0.3)
-ax.set_title("FLOP estimation error per workload, grouped by model size\n"
-             "(21 FP32 frontier configs, deployed 2-parameter estimator)",
+# ── Figure 1: estimated vs true TFLOPs per workload (leave-one-out, v2 sweep) ─
+# 3-parameter (EMC) estimator — the model the paper presents (equation (1)).
+# Scatter styled like figure 7; shaded band marks the ±10% accuracy target.
+pool1 = trials6[0]["pool"]
+gt1 = np.array([r["ground_truth_tf"] for r in pool1])
+est1 = gt1 * (1 + np.array([r["signed_loo_emc"] for r in pool1]) / 100)
+
+fig, ax = plt.subplots(figsize=(4.8, 4.6), dpi=200)
+lim = (70, 190)
+xs = np.array(lim)
+ax.fill_between(xs, xs * 0.9, xs * 1.1, color=GRID, alpha=0.55, zorder=1,
+                linewidth=0, label="±10% target")
+ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
+ax.scatter(gt1, est1, s=26, color=BLUE, zorder=4, linewidths=0,
+           label="3-parameter EMC estimate")
+ax.set_xlim(lim)
+ax.set_ylim(lim)
+ax.set_aspect("equal")
+ax.set_xlabel("Ground-Truth TFLOPs")
+ax.set_ylabel("Estimated TFLOPs")
+ax.legend(fontsize=8, frameon=False, loc="upper left")
+ax.set_title("Estimated vs. True Training TFLOPs (Leave-One-Out)",
              fontsize=9.5, color=INK, loc="left")
-ax.grid(axis="x", visible=False)
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, "fig1_per_workload_error.png"))
 plt.close(fig)
 
-# ── Figure 2: held-out max error across 200 resampled splits ─────────────────
+# ── 200 resampled splits: held-out error stats (replaces the old fig 2) ──────
+# The loop also collects each workload's held-out estimates for fig 7: with a
+# 2/3 train fraction each workload lands in the test set ~67/200 times.
 base = 1000
-maxerrs = []
+maxerrs, pooled_errs = [], []
+split_ests = [[] for _ in FRONTIER]
+idx7 = {id(r): i for i, r in enumerate(FRONTIER)}
 for i in range(200):
     train, test, _ = make_split(FRONTIER, "random", base + i)
-    e, pov = fit_active_energy_model(train)
-    score(test, e, pov)
-    m, _ = err_stats(test)
+    e3, c3, p3 = fit_active_energy_emc_model(train)
+    score_emc(test, e3, c3, p3)
+    m, _ = err_stats(test, "err_pct_emc")
     maxerrs.append(m)
+    for r in test:
+        if r["est_tflops_emc"] is not None:
+            split_ests[idx7[id(r)]].append(r["est_tflops_emc"])
+            pooled_errs.append(r["err_pct_emc"])
 maxerrs = np.array(maxerrs)
+pooled_errs = np.array(pooled_errs)
 fail = float((maxerrs >= 10).mean() * 100)
-
-fig, ax = plt.subplots(figsize=(5.4, 3.0), dpi=200)
-bins = np.arange(3.0, 13.0, 0.5)
-ax.hist(maxerrs, bins=bins, color=BLUE, zorder=3)
-ax.axvline(10, color=INK2, lw=1.1, ls=(0, (4, 3)), zorder=4)
-ax.text(10.15, ax.get_ylim()[1] * 0.93, "10% target", color=INK2, fontsize=8,
-        va="top")
-ax.axvline(8.95, color=AQUA, lw=1.6, zorder=4)
-ax.text(8.8, ax.get_ylim()[1] * 0.93, "reported split (8.95%)", color=INK2,
-        fontsize=8, va="top", ha="right")
-ax.set_xlabel("held-out max error (%)")
-ax.set_ylabel("splits (of 200)")
-ax.set_title(f"Held-out error across 200 resampled train/test splits\n"
-             f"({fail:.1f}% of splits exceed the 10% target)",
-             fontsize=9.5, color=INK, loc="left")
-fig.tight_layout()
-fig.savefig(os.path.join(OUT, "fig2_split_stability.png"))
-plt.close(fig)
+print(f"200-split held-out (3p): per-workload mean {pooled_errs.mean():.2f}%"
+      f" sd {pooled_errs.std(ddof=1):.2f}%  |  per-split max mean"
+      f" {maxerrs.mean():.2f}% sd {maxerrs.std(ddof=1):.2f}%")
 
 # ── Figure 3: evasion panels ──────────────────────────────────────────────────
 # (a) adversarial probe numbers (adversarial_results.txt)
@@ -143,7 +130,8 @@ for prec in ("fp32", "tf32", "fp16", "bf16"):
         rs = FRONTIER
     ratios = []
     for r in rs:
-        est = detect_flops.estimate_tflops(r["net_energy_j"], r["duration_s"])
+        est = detect_flops.estimate_tflops_emc(r["net_energy_j"],
+                                               r["duration_s"], r["tb_moved"])
         ratios.append(est / r["ground_truth_tf"])
     prec_ratio[prec] = float(np.mean(ratios))
 
@@ -169,7 +157,7 @@ a.set_xticklabels(["memory spoof\n(~0 true FLOPs)", "cache-resident matmul\n(con
 a.set_ylabel("TFLOPs")
 a.set_ylim(-135, 215)
 a.legend(fontsize=7.5, frameon=False, loc="upper left")
-a.set_title("(a) Adversarial probe — EMC byte term\nflags the spoof",
+a.set_title("(a) Adversarial Probe — EMC Byte Term\nFlags the Spoof",
             fontsize=9.5, color=INK, loc="left")
 a.grid(axis="x", visible=False)
 
@@ -182,47 +170,44 @@ b.text(3.4, 1.02, "perfect", ha="right", va="bottom", color=INK2, fontsize=8)
 for i, v in enumerate(vals):
     b.text(i, v + 0.04 if v >= 0 else v - 0.04, f"{v:.2f}", ha="center",
            va="bottom" if v >= 0 else "top", fontsize=8, color=INK2)
-b.text(2.48, 0.52, "reads as \u2264 0: run missed\nentirely (also drops below\nthe 80% util gate)",
+b.text(2.48, 0.62, "reads as \u2264 0: run missed\nentirely (also drops below\nthe 80% util gate)",
        ha="center", fontsize=7, color=INK2)
 b.set_xticks(range(4))
 b.set_xticklabels(precs, fontsize=8.5)
-b.set_ylim(-0.75, 1.3)
-b.set_ylabel("estimated / true FLOPs")
-b.set_title("(b) Precision evasion \u2014 estimate as a\nfraction of true FLOPs",
+b.set_ylim(-2.0, 1.35)
+b.set_ylabel("Estimated / True FLOPs")
+b.set_title("(b) Precision Evasion \u2014 Estimate as a\nFraction of True FLOPs",
             fontsize=9.5, color=INK, loc="left")
 b.grid(axis="x", visible=False)
 fig.tight_layout()
 fig.savefig(os.path.join(OUT, "fig3_evasion.png"))
 plt.close(fig)
 
-# ── Figure 6: signed LOO error by hyperparameter axis (all 25W trials) ────────
-# One dot per fp32 frontier run (leave-one-out signed error, computed by
-# eval_power_monitor.load_bias_trials — the same numbers as bias_report.txt),
-# marker shape = trial, aqua dash = level mean. Positive = overestimate.
-TRIAL_FILES = [f for f in ("eval_results_v2_records.json",
-                           "eval_results_25w_trial2_records.json",
-                           "eval_results_25w_trial3_records.json")
-               if os.path.exists(os.path.join(REPO, f))]
-trials6 = load_bias_trials([os.path.join(REPO, f) for f in TRIAL_FILES])
-n_tr = len(trials6)
+# ── Figures 6a/6b: signed LOO error by hyperparameter axis (all 25W trials) ───
+# One dot per fp32 frontier run (leave-one-out signed error from trials6 —
+# the same numbers as bias_report.txt), marker shape = trial, aqua dash =
+# mean at each value. Positive = overestimate. Split into two figures:
+# (a) model-shape axes, (b) training-setup axes.
+from matplotlib.lines import Line2D
 
-PANELS = [  # (config key, panel title, row)
-    ("d_model", "model width\n(d_model)", 0),
-    ("seq_len", "sequence\nlength", 0),
-    ("dim_feedforward", "FFN width", 0),
-    ("batch_size", "batch\nsize", 1),
-    ("num_layers", "layers", 1),
-    ("nhead", "attention\nheads", 1),
-    ("optimizer", "optimizer", 1),
+PANELS = [  # (config key, panel title, row) — names match the report's
+    # "Constructing Sample Workloads" definitions
+    ("d_model", "Model Width", 0),
+    ("seq_len", "Sequence Length", 0),
+    ("dim_feedforward", "Feed-Forward\nWidth", 0),
+    ("batch_size", "Batch Size", 1),
+    ("num_layers", "Depth", 1),
+    ("nhead", "Attention Heads", 1),
+    ("optimizer", "Optimizer", 1),
 ]
+OPT_NAMES = {"adamw": "AdamW", "sgd": "SGD"}
 levels6 = {key: sorted({cfg_val(r, key) for t in trials6 for r in t["pool"]})
            for key, _title, _row in PANELS}
 rows = {0: [p for p in PANELS if p[2] == 0], 1: [p for p in PANELS if p[2] == 1]}
+MARKERS = ["o", "s", "^"]
 
 fig = plt.figure(figsize=(7.2, 5.4), dpi=200)
 gs = fig.add_gridspec(2, 1, hspace=0.42)
-MARKERS = ["o", "s", "^"]
-label_means = {"d_model", "dim_feedforward"}   # selective direct labels
 for row_i, panels in rows.items():
     widths = [len(levels6[k]) for k, _t, _r in panels]
     sub = gs[row_i].subgridspec(1, len(panels), width_ratios=widths, wspace=0.14)
@@ -230,48 +215,120 @@ for row_i, panels in rows.items():
         ax = fig.add_subplot(sub[pi])
         lv = levels6[key]
         for ti, t in enumerate(trials6):
-            xs, ys = [], []
-            for r in t["pool"]:
-                xs.append(lv.index(cfg_val(r, key))
-                          + (ti - (n_tr - 1) / 2) * 0.22)
-                ys.append(r["signed_loo"])
+            xs = [lv.index(cfg_val(r, key)) + (ti - (n_tr - 1) / 2) * 0.22
+                  for r in t["pool"]]
+            ys = [r["signed_loo_emc"] for r in t["pool"]]
             ax.scatter(xs, ys, s=16, marker=MARKERS[ti], color=BLUE,
-                       alpha=0.65, linewidths=0, zorder=3,
-                       label=f"trial {ti + 1}" if (row_i, pi) == (0, 0) else None)
+                       alpha=0.65, linewidths=0, zorder=3)
         for i, v in enumerate(lv):
-            errs6 = [r["signed_loo"] for t in trials6 for r in t["pool"]
-                     if cfg_val(r, key) == v]
-            m = float(np.mean(errs6))
+            m = float(np.mean([r["signed_loo_emc"] for t in trials6
+                               for r in t["pool"] if cfg_val(r, key) == v]))
             ax.hlines(m, i - 0.34, i + 0.34, color=AQUA, lw=2.2, zorder=4)
-            if key in label_means and abs(m) >= 3:   # label only the biased levels
-                ax.text(i, m + (1.1 if m >= 0 else -1.1), f"{m:+.1f}",
-                        ha="center", va="bottom" if m >= 0 else "top",
-                        fontsize=6.8, color=INK2, zorder=5)
         ax.axhline(0, color=BASE, lw=1, zorder=2)
         ax.set_xticks(range(len(lv)))
-        ax.set_xticklabels([str(v) for v in lv], fontsize=7,
+        ax.set_xticklabels([OPT_NAMES.get(str(v), str(v)) for v in lv],
+                           fontsize=7,
                            rotation=45 if key == "dim_feedforward" else 0)
         ax.set_xlim(-0.6, len(lv) - 0.4)
-        ax.set_ylim(-13, 13)
+        ax.set_ylim(-16.5, 13)
         ax.grid(axis="x", visible=False)
         ax.set_title(title, fontsize=8, color=INK2)
         if pi == 0:
-            ax.set_ylabel("signed error (%)\n↑ over   ↓ under", fontsize=8)
+            ax.set_ylabel("Signed Error (%)\n↑ Over   ↓ Under", fontsize=8)
             if row_i == 0 and n_tr > 1:
-                ax.legend(fontsize=6.8, frameon=False, loc="upper right",
-                          handletextpad=0.1, borderaxespad=0.1)
+                handles = [Line2D([], [], marker=MARKERS[ti], color=BLUE,
+                                  ls="none", ms=4.5, label=f"trial {ti + 1}")
+                           for ti in range(n_tr)]
+                handles.append(Line2D([], [], color=AQUA, lw=2.2,
+                                      label="mean error"))
+                ax.legend(handles=handles, fontsize=6.8, frameon=False,
+                          loc="lower left", handletextpad=0.2,
+                          borderaxespad=0.1, labelspacing=0.4)
         else:
             ax.set_yticklabels([])
-fig.suptitle("Signed FLOP-estimation error by workload hyperparameter\n"
-             f"(leave-one-out; {sum(len(t['pool']) for t in trials6)} fp32 "
-             f"frontier runs, {n_tr} independent 25 W sweeps; "
-             "green dash = level mean)",
+fig.suptitle("Hyperparameter Bias on FLOP-Estimation Error",
              fontsize=9.5, color=INK, x=0.02, ha="left")
-fig.tight_layout(rect=(0, 0, 1, 0.92))
+fig.tight_layout(rect=(0, 0, 1, 0.95))
 fig.savefig(os.path.join(OUT, "fig6_bias_by_axis.png"))
 plt.close(fig)
 
-print("stability fail rate:", fail, "%")
-print("precision ratios:", {k: round(v, 3) for k, v in prec_ratio.items()})
+# ── Figure 7: estimated vs true TFLOPs, 3-param, spread over 200 splits ──────
+# For each of the 21 fp32 frontier workloads: the median and min–max of its
+# held-out 3-param estimates collected in the figure-2 loop above. Every
+# estimate is from a fit whose train split (14 of the other 20 workloads)
+# excluded that workload; the whisker shows how much the estimate moves as the
+# train split changes.
+gt7 = np.array([r["ground_truth_tf"] for r in FRONTIER])
+med7 = np.array([np.median(e) for e in split_ests])
+lo7 = np.array([np.min(e) for e in split_ests])
+hi7 = np.array([np.max(e) for e in split_ests])
+
+fig, ax = plt.subplots(figsize=(4.8, 4.6), dpi=200)
+lim = (70, 190)
+xs = np.array(lim)
+ax.fill_between(xs, xs * 0.9, xs * 1.1, color=GRID, alpha=0.55, zorder=1,
+                linewidth=0, label="±10% error")
+ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
+ax.errorbar(gt7, med7, yerr=(med7 - lo7, hi7 - med7), fmt="none",
+            ecolor=BLUE, elinewidth=1.1, alpha=0.75, capsize=2.2,
+            capthick=1.1, zorder=3, label="min–max error")
+ax.scatter(gt7, med7, s=22, color=BLUE, zorder=4, linewidths=0,
+           label="median held-out estimate")
+ax.set_xlim(lim)
+ax.set_ylim(lim)
+ax.set_aspect("equal")
+ax.set_xlabel("Ground-Truth TFLOPs")
+ax.set_ylabel("Estimated TFLOPs")
+ax.legend(fontsize=7.5, frameon=False, loc="upper left")
+ax.set_title("Estimated vs. True Training TFLOPs",
+             fontsize=9.5, color=INK, loc="left")
+fig.tight_layout()
+fig.savefig(os.path.join(OUT, "fig7_est_vs_truth.png"))
+plt.close(fig)
+
+# ── Figure 7 (kept alternate): 2-param vs 3-param single-LOO scatter ──────────
+# The previous fig7: each workload's estimate from the leave-one-out fit that
+# excluded it, for both estimators side by side.
+pool7 = trials6[0]["pool"]          # trial 1 = eval_results_v2
+gt7a = np.array([r["ground_truth_tf"] for r in pool7])
+est2 = gt7a * (1 + np.array([r["signed_loo"] for r in pool7]) / 100)
+est3 = gt7a * (1 + np.array([r["signed_loo_emc"] for r in pool7]) / 100)
+
+fig, ax = plt.subplots(figsize=(4.8, 4.6), dpi=200)
+ax.fill_between(xs, xs * 0.9, xs * 1.1, color=GRID, alpha=0.55, zorder=1,
+                linewidth=0)
+ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
+ax.scatter(gt7a, est2, s=26, color=BLUE, zorder=4, linewidths=0,
+           label="2-param estimate (excludes bandwidth util %)")
+ax.scatter(gt7a, est3, s=30, facecolors="none", edgecolors=AQUA, marker="s",
+           linewidths=1.2, zorder=3,
+           label="3-param estimate (includes bandwidth util %)")
+ax.set_xlim(lim)
+ax.set_ylim(lim)
+ax.set_aspect("equal")
+ax.set_xlabel("Ground-Truth TFLOPs")
+ax.set_ylabel("Estimated TFLOPs")
+ax.legend(fontsize=8, frameon=False, loc="upper left")
+ax.set_title("Estimated vs. True Training TFLOPs",
+             fontsize=9.5, color=INK, loc="left")
+fig.tight_layout()
+fig.savefig(os.path.join(OUT, "fig7_alt_2param_3param.png"))
+plt.close(fig)
+
+print("stability fail rate (3p):", fail, "%")
+print("precision ratios (3p):", {k: round(v, 3) for k, v in prec_ratio.items()})
 print("fig6 trials:", TRIAL_FILES)
+loo3 = np.array([r["signed_loo_emc"] for r in trials6[0]["pool"]])
+print("fig1 (3p LOO, v2): max |err|", round(float(np.max(np.abs(loo3))), 2),
+      " mean |err|", round(float(np.mean(np.abs(loo3))), 2),
+      " n>10%:", int((np.abs(loo3) >= 10).sum()))
+pt3 = [{r["label"]: r["signed_loo_emc"] for r in t["pool"]} for t in trials6]
+for i in range(len(pt3)):
+    for j in range(i + 1, len(pt3)):
+        common = sorted(set(pt3[i]) & set(pt3[j]))
+        xa = np.array([pt3[i][k] for k in common])
+        ya = np.array([pt3[j][k] for k in common])
+        print(f"3p consistency T{i+1} vs T{j+1}: r="
+              f"{float(np.corrcoef(xa, ya)[0, 1]):+.2f} same-sign "
+              f"{float((xa * ya > 0).mean() * 100):.0f}%")
 print("figures written to", OUT)

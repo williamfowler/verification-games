@@ -49,12 +49,12 @@ def session_chrome(ax, ymax):
     ax.axvspan(t_start, t_end, color=BLUE, alpha=0.06, zorder=1)
     for x in (t_start, t_end):
         ax.axvline(x, color=MUTED, lw=0.9, ls=(0, (4, 3)), zorder=2)
-    ax.text((t_start + t_end) / 2, ymax, "training workload", ha="center",
+    ax.text((t_start + t_end) / 2, ymax, "Training Workload", ha="center",
             fontsize=8.5, color=INK2)
-    ax.text(t_start / 2, ymax, "idle", ha="center", fontsize=8.5, color=INK2)
-    ax.text((t_end + t_max) / 2, ymax, "idle", ha="center", fontsize=8.5,
+    ax.text(t_start / 2, ymax, "Idle", ha="center", fontsize=8.5, color=INK2)
+    ax.text((t_end + t_max) / 2, ymax, "Idle", ha="center", fontsize=8.5,
             color=INK2)
-    ax.set_xlabel("time (minutes)")
+    ax.set_xlabel("Time (Minutes)")
     ax.set_xlim(0, t_max)
 
 
@@ -63,14 +63,13 @@ fig, ax = plt.subplots(figsize=(7.2, 3.0), dpi=200)
 ax.plot(pt, pw, color=BLUE, lw=1.4, zorder=3)
 ax.axhline(FALLBACK_IDLE_POWER_MW / 1000, color=MUTED, lw=0.9,
            ls=(0, (2, 3)), zorder=2)
-ax.text(t_max, FALLBACK_IDLE_POWER_MW / 1000 + 0.25,
-        "calibrated idle baseline (0.64 W)", ha="right", fontsize=7.5,
+ax.text((t_start + t_end) / 2, FALLBACK_IDLE_POWER_MW / 1000 + 0.25,
+        "calibrated idle baseline (0.64 W)", ha="center", fontsize=7.5,
         color=INK2)
-ax.set_ylabel("rail power (W)")
+ax.set_ylabel("Power (W)")
 ax.set_ylim(0, max(pw) * 1.18)
 session_chrome(ax, max(pw) * 1.10)
-ax.set_title("Rail power (VDD_CPU_GPU_CV) across one monitored session\n"
-             "(d384_b16_s128_L3 training run between two idle periods)",
+ax.set_title("Power over Time During a Sample Workload",
              fontsize=9.5, color=INK, loc="left")
 fig.tight_layout()
 fig.savefig(os.path.join(HERE, "fig4_power_timeseries.png"))
@@ -79,14 +78,36 @@ plt.close(fig)
 # ── Figure 5: DRAM bandwidth ──────────────────────────────────────────────────
 fig, ax = plt.subplots(figsize=(7.2, 3.0), dpi=200)
 ax.plot(bt, bw, color=AQUA, lw=1.4, zorder=3)
-ax.set_ylabel("DRAM bandwidth (% of peak)")
+ax.set_ylabel("Memory Bandwidth Utilization (%)")
 ax.set_ylim(0, max(bw) * 1.25)
 session_chrome(ax, max(bw) * 1.16)
-ax.set_title("DRAM bandwidth (actmon, scale-corrected) across the same session\n"
-             "(d384_b16_s128_L3 training run between two idle periods)",
+ax.set_title("Memory Bandwidth over Time During a Sample Workload",
              fontsize=9.5, color=INK, loc="left")
 fig.tight_layout()
 fig.savefig(os.path.join(HERE, "fig5_dram_timeseries.png"))
 plt.close(fig)
 
-print("wrote fig4_power_timeseries.png and fig5_dram_timeseries.png")
+# ── Figure 5 variant: with a 10 s running average ─────────────────────────────
+# Samples arrive every ~0.5 s, so a 10 s window = 20 samples (centered).
+import numpy as np
+WIN = 20
+bw_arr = np.array(bw)
+avg = np.convolve(bw_arr, np.ones(WIN) / WIN, mode="valid")
+avg_t = bt[WIN // 2 - 1: WIN // 2 - 1 + len(avg)]
+
+fig, ax = plt.subplots(figsize=(7.2, 3.0), dpi=200)
+ax.plot(bt, bw, color=AQUA, lw=1.0, alpha=0.35, zorder=3,
+        label="per-sample (0.5 s)")
+ax.plot(avg_t, avg, color=AQUA, lw=1.8, zorder=4, label="10 s running average")
+ax.set_ylabel("Memory Bandwidth Utilization (%)")
+ax.set_ylim(0, max(bw) * 1.25)
+session_chrome(ax, max(bw) * 1.16)
+ax.legend(fontsize=7.5, frameon=False, loc="lower center", ncol=2)
+ax.set_title("Memory Bandwidth over Time During a Sample Workload",
+             fontsize=9.5, color=INK, loc="left")
+fig.tight_layout()
+fig.savefig(os.path.join(HERE, "fig5_dram_timeseries_avg.png"))
+plt.close(fig)
+
+print("wrote fig4_power_timeseries.png, fig5_dram_timeseries.png"
+      " and fig5_dram_timeseries_avg.png")
