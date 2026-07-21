@@ -11,9 +11,8 @@ integrates net energy against FlopCounterMode ground truth.
 Not a standalone tool: the calibration/accuracy entry point is
 eval_power_monitor.py (which fits the active-energy models and prints the
 RECOMMENDED CONSTANTS block for detect_flops.py). Other consumers:
-drift_test.py, adversarial_probe.py, actmon_scale_bench.py,
-writeup/capture_timeseries.py. The legacy standalone calibrator this module
-grew out of produced old/power_calibration.txt.
+actmon_scale_bench.py and writeup/capture_timeseries.py. The legacy standalone
+calibrator this module grew out of produced old/power_calibration.txt.
 """
 
 import os
@@ -304,7 +303,7 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     # A config may override the workload entirely via {"script": path,
     # "args": [...]} — any script that speaks the same stdout protocol (the
     # "Starting workload" trigger + "Ground truth total : X TFLOPs" line) goes
-    # through this exact sampling path, e.g. adversarial_workload.py.
+    # through this exact sampling path, e.g. old/adversarial_workload.py.
     if "script" in config:
         cmd = ([find_venv_python(), "-u", config["script"]]
                + [str(a) for a in config.get("args", [])])

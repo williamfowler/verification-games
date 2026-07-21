@@ -65,13 +65,14 @@ INA3221_LABEL  = "VDD_CPU_GPU_CV"
 # variants. Objective: relative least squares, p_overhead by leave-one-out CV.
 # Results (2-param): held-out (TEST) max err 8.95%; all 21 frontier max err 8.82%
 # (mean 4.00%), under the 10% target. Stability over 200 resampled splits:
-# E_MARGINAL 5.29-6.81 (sd 0.37), split-failure rate 13.5% — see
-# eval_generalization.txt before trusting any single-split PASS.
+# E_MARGINAL 5.29-6.81 (sd 0.37), split-failure rate 13.5% — see the
+# generalization analysis (old/eval_generalization.txt) before trusting any
+# single-split PASS.
 #
 # PRECISION SCOPE (why the pool is FP32-only): precision is not observable from
 # power/clocks, and tf32/fp16/bf16 runs do 2-3.5x more FLOPs per joule than
 # fp32 — a precision-blind fit over all of them is degenerate (see
-# eval_results_v2.txt: tf32 runs read ~50% low; fp16/bf16 also drop below the
+# old/eval_results_v2.txt: tf32 runs read ~50% low; fp16/bf16 also drop below the
 # frontier util gate at this model scale). These constants therefore assume
 # FP32 matmul (this build's torch default) and UNDERESTIMATE tensor-core
 # workloads by up to ~3.5x — an acknowledged red-team evasion channel, not a
@@ -116,9 +117,9 @@ E_MARGINAL_J_PER_TFLOP   = 5.72
 # Fit 2026-07-07 (same eval_results_v2 fp32 run as above): held-out (TEST) max
 # err 14.61% — WORSE than 2-param on benign held-out data, and unstable across
 # resampled splits (E_PER_TB spans 1.2k-6.9k J/TB; 59% of splits fail the 10%
-# target — eval_generalization.txt). Kept deployed anyway because its value is
-# ADVERSARIAL, not accuracy: the 2026-07-07 adversarial probe
-# (adversarial_results.txt) showed a memory-spoof workload at 98% GPU util fools
+# target — old/eval_generalization.txt). Kept deployed anyway because its value
+# is ADVERSARIAL, not accuracy: the 2026-07-07 adversarial probe
+# (old/adversarial_results.txt) showed a memory-spoof workload at 98% GPU util fools
 # the 2-param estimator (claims 8.3 TFLOPs vs 1.8 true) while this estimator
 # collapses to -96 TFLOPs — an unmistakable spoof flag. It over-corrects (the
 # byte coefficient is high) and penalizes legitimate high-AI work (+17% on a

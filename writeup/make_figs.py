@@ -1,7 +1,6 @@
-"""Generate the three Results figures for the write-up from real experiment data."""
+"""Generate the Results figures for the write-up from real experiment data."""
 import json
 import os
-import random
 import sys
 
 import matplotlib
@@ -9,13 +8,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-REPO = "/home/jetson/verification-games"
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "writeup")
 os.makedirs(OUT, exist_ok=True)
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "power_calibration"))
 
-import detect_flops
 from eval_power_monitor import (fit_active_energy_emc_model, make_split,
                                 score_emc, err_stats, load_bias_trials, cfg_val)
 
@@ -52,9 +50,9 @@ def load_fp32_frontier():
     return recs, frontier
 
 
-ALL_RECS, FRONTIER = load_fp32_frontier()
+_ALL_RECS, FRONTIER = load_fp32_frontier()
 
-# LOO trials (shared by figs 1, 6, 7): every per-run error/estimate drawn from
+# LOO trials (shared by figs 6, 7): every per-run error/estimate drawn from
 # these is held out — predicted by a fit that excluded that run.
 TRIAL_FILES = [f for f in ("eval_results_v2_records.json",
                            "eval_results_25w_trial2_records.json",
@@ -63,34 +61,7 @@ TRIAL_FILES = [f for f in ("eval_results_v2_records.json",
 trials6 = load_bias_trials([os.path.join(REPO, f) for f in TRIAL_FILES])
 n_tr = len(trials6)
 
-# ── Figure 1: estimated vs true TFLOPs per workload (leave-one-out, v2 sweep) ─
-# 3-parameter (EMC) estimator — the model the paper presents (equation (1)).
-# Scatter styled like figure 7; shaded band marks the ±10% accuracy target.
-pool1 = trials6[0]["pool"]
-gt1 = np.array([r["ground_truth_tf"] for r in pool1])
-est1 = gt1 * (1 + np.array([r["signed_loo_emc"] for r in pool1]) / 100)
-
-fig, ax = plt.subplots(figsize=(4.8, 4.6), dpi=200)
-lim = (70, 190)
-xs = np.array(lim)
-ax.fill_between(xs, xs * 0.9, xs * 1.1, color=GRID, alpha=0.55, zorder=1,
-                linewidth=0, label="±10% target")
-ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
-ax.scatter(gt1, est1, s=26, color=BLUE, zorder=4, linewidths=0,
-           label="3-parameter EMC estimate")
-ax.set_xlim(lim)
-ax.set_ylim(lim)
-ax.set_aspect("equal")
-ax.set_xlabel("Ground-Truth TFLOPs")
-ax.set_ylabel("Estimated TFLOPs")
-ax.legend(fontsize=8, frameon=False, loc="upper left")
-ax.set_title("Estimated vs. True Training TFLOPs (Leave-One-Out)",
-             fontsize=9.5, color=INK, loc="left")
-fig.tight_layout()
-fig.savefig(os.path.join(OUT, "fig1_per_workload_error.png"))
-plt.close(fig)
-
-# ── 200 resampled splits: held-out error stats (replaces the old fig 2) ──────
+# ── 200 resampled splits: held-out error stats ───────────────────────────────
 # The loop also collects each workload's held-out estimates for fig 7: with a
 # 2/3 train fraction each workload lands in the test set ~67/200 times.
 base = 1000
@@ -114,78 +85,9 @@ print(f"200-split held-out (3p): per-workload mean {pooled_errs.mean():.2f}%"
       f" sd {pooled_errs.std(ddof=1):.2f}%  |  per-split max mean"
       f" {maxerrs.mean():.2f}% sd {maxerrs.std(ddof=1):.2f}%")
 
-# ── Figure 3: evasion panels ──────────────────────────────────────────────────
-# (a) adversarial probe numbers (adversarial_results.txt)
-spoof = {"gt": 1.78, "e2": 8.26, "emc": -96.05}
-dense = {"gt": 152.08, "e2": 158.00, "emc": 177.71}
-
-# (b) monitor-read fraction per precision (v2 records, deployed constants)
-prec_ratio = {}
-for prec in ("fp32", "tf32", "fp16", "bf16"):
-    rs = [r for r in ALL_RECS
-          if r["config"].get("precision", "fp32") == prec
-          and (prec == "fp32") == (r in FRONTIER or r["avg_gpu_pct"] < 80)]
-    rs = [r for r in ALL_RECS if r["config"].get("precision", "fp32") == prec]
-    if prec == "fp32":
-        rs = FRONTIER
-    ratios = []
-    for r in rs:
-        est = detect_flops.estimate_tflops_emc(r["net_energy_j"],
-                                               r["duration_s"], r["tb_moved"])
-        ratios.append(est / r["ground_truth_tf"])
-    prec_ratio[prec] = float(np.mean(ratios))
-
-fig, (a, b) = plt.subplots(1, 2, figsize=(7.2, 3.1), dpi=200,
-                           gridspec_kw={"width_ratios": [1.15, 1]})
-x = np.arange(2)
-w = 0.26
-gvals = [spoof["gt"], dense["gt"]]
-e2vals = [spoof["e2"], dense["e2"]]
-emvals = [spoof["emc"], dense["emc"]]
-a.bar(x - w, gvals, w, color=MUTED, label="ground truth", zorder=3)
-a.bar(x, e2vals, w, color=BLUE, label="2-param estimate", zorder=3)
-a.bar(x + w, emvals, w, color=AQUA, label="EMC estimate", zorder=3)
-a.axhline(0, color=BASE, lw=1)
-for xi, v in [(x[0] - w, gvals[0]), (x[0], e2vals[0]), (x[0] + w, emvals[0]),
-              (x[1] - w, gvals[1]), (x[1], e2vals[1]), (x[1] + w, emvals[1])]:
-    a.text(xi, v + (6 if v >= 0 else -6), f"{v:.0f}" if abs(v) > 3 else f"{v:.1f}",
-           ha="center", va="bottom" if v >= 0 else "top", fontsize=7.5,
-           color=INK2)
-a.set_xticks(x)
-a.set_xticklabels(["memory spoof\n(~0 true FLOPs)", "cache-resident matmul\n(control)"],
-                  fontsize=8)
-a.set_ylabel("TFLOPs")
-a.set_ylim(-135, 215)
-a.legend(fontsize=7.5, frameon=False, loc="upper left")
-a.set_title("(a) Adversarial Probe — EMC Byte Term\nFlags the Spoof",
-            fontsize=9.5, color=INK, loc="left")
-a.grid(axis="x", visible=False)
-
-precs = ["fp32", "tf32", "fp16", "bf16"]
-vals = [prec_ratio[p] for p in precs]
-b.bar(range(4), vals, width=0.55, color=BLUE, zorder=3)
-b.axhline(0, color=BASE, lw=1, zorder=2)
-b.axhline(1.0, color=MUTED, lw=0.9, ls=(0, (4, 3)))
-b.text(3.4, 1.02, "perfect", ha="right", va="bottom", color=INK2, fontsize=8)
-for i, v in enumerate(vals):
-    b.text(i, v + 0.04 if v >= 0 else v - 0.04, f"{v:.2f}", ha="center",
-           va="bottom" if v >= 0 else "top", fontsize=8, color=INK2)
-b.text(2.48, 0.62, "reads as \u2264 0: run missed\nentirely (also drops below\nthe 80% util gate)",
-       ha="center", fontsize=7, color=INK2)
-b.set_xticks(range(4))
-b.set_xticklabels(precs, fontsize=8.5)
-b.set_ylim(-2.0, 1.35)
-b.set_ylabel("Estimated / True FLOPs")
-b.set_title("(b) Precision Evasion \u2014 Estimate as a\nFraction of True FLOPs",
-            fontsize=9.5, color=INK, loc="left")
-b.grid(axis="x", visible=False)
-fig.tight_layout()
-fig.savefig(os.path.join(OUT, "fig3_evasion.png"))
-plt.close(fig)
-
 # ── Figures 6a/6b: signed LOO error by hyperparameter axis (all 25W trials) ───
 # One dot per fp32 frontier run (leave-one-out signed error from trials6 —
-# the same numbers as bias_report.txt), marker shape = trial, aqua dash =
+# the same numbers as the --bias-report output), marker shape = trial, aqua dash =
 # mean at each value. Positive = overestimate. Split into two figures:
 # (a) model-shape axes, (b) training-setup axes.
 from matplotlib.lines import Line2D
@@ -316,12 +218,7 @@ fig.savefig(os.path.join(OUT, "fig7_alt_2param_3param.png"))
 plt.close(fig)
 
 print("stability fail rate (3p):", fail, "%")
-print("precision ratios (3p):", {k: round(v, 3) for k, v in prec_ratio.items()})
 print("fig6 trials:", TRIAL_FILES)
-loo3 = np.array([r["signed_loo_emc"] for r in trials6[0]["pool"]])
-print("fig1 (3p LOO, v2): max |err|", round(float(np.max(np.abs(loo3))), 2),
-      " mean |err|", round(float(np.mean(np.abs(loo3))), 2),
-      " n>10%:", int((np.abs(loo3) >= 10).sum()))
 pt3 = [{r["label"]: r["signed_loo_emc"] for r in t["pool"]} for t in trials6]
 for i in range(len(pt3)):
     for j in range(i + 1, len(pt3)):

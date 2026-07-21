@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = "/home/jetson/verification-games"
+REPO = os.path.dirname(HERE)
 sys.path.insert(0, REPO)
 from detect_flops import ORIN_PROFILE, FALLBACK_IDLE_POWER_MW
 
