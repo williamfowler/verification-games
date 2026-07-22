@@ -5,3 +5,6 @@
 torch
 numpy
 matplotlib
+
+# NVLink/PCIe interconnect counters (Task 1 blue-team signal)
+nvidia-ml-py
