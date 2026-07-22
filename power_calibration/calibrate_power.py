@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """
-calibrate_power.py — sampling library for the calibration/eval tooling.
+calibrate_power.py — sampling library for the calibration/eval tooling (DDP regime).
 
-Provides the shared measurement plumbing: GPU power sampling via nvidia-smi
-(PowerSampler), DRAM-bytes sampling via the DCGM DRAM-active counter
-(BytesSampler), idle-baseline sampling (sample_idle), and the instrumented
-workload runner (run_workload) that integrates net energy against
-FlopCounterMode ground truth.
+Provides the shared measurement plumbing for the fp16-AMP DDP experiment on
+2× V100:
+  - PowerSampler  : per-GPU nvidia-smi power + util; power SUMMED across both GPUs
+                    for the energy integral, util kept per-GPU (both-GPU frontier gate).
+  - BytesSampler  : per-GPU DRAM-active (DCGM field 1005) → DRAM bytes moved (summed).
+  - NvlinkSampler : per-GPU NVLink/PCIe interconnect bytes (Task 1; imported).
+  - run_workload  : launches the workload under torchrun --nproc_per_node=2, samples
+                    all three on the same window, integrates net energy vs the
+                    aggregate FlopCounterMode ground truth.
 
-PORTED from the Jetson Orin Nano (INA3221 + tegrastats + actmon) to an x86
-dual-Tesla-V100 box: power/util now come from nvidia-smi (unprivileged) and DRAM
-activity from DCGM field 1005 via `dcgmi dmon` (needs a root nv-hostengine, but
-the dcgmi client stays unprivileged). See detect_flops.py for the signal map.
+DDP-only: this branch launches every workload via torchrun on BOTH GPUs (no
+single-GPU pinning). Every record is tagged mode="fp16_ddp"/precision so it never
+pools with the legacy fp32 single-GPU porting-era fit. DCGM pattern: root
+nv-hostengine, unprivileged dcgmi clients.
 
-Not a standalone tool: the calibration/accuracy entry point is
-eval_power_monitor.py (which fits the active-energy models and prints the
-RECOMMENDED CONSTANTS block for detect_flops.py). Other consumers:
-actmon_scale_bench.py and writeup/capture_timeseries.py.
+Entry point for calibration/accuracy is eval_power_monitor.py.
 """
 
 import os
@@ -30,60 +31,88 @@ from statistics import mean, median, stdev
 # ── Sampling ──────────────────────────────────────────────────────────────────
 POLL_S = 0.5   # nvidia-smi / DCGM sample interval (2 Hz)
 
-# This file lives in power_calibration/; the workload script and the venv are at
-# the repo root one level up.
 REPO_ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKLOAD_SCRIPT = os.path.join(REPO_ROOT, "sample_ml_workload.py")
 
-# Canonical hardware primitives live in detect_flops.py; re-exported here so the
-# eval/probe/bench scripts keep importing them from calibrate_power.
+# Both V100s. With CUDA_DEVICE_ORDER=PCI_BUS_ID the nvidia-smi/DCGM index matches
+# the torchrun local_rank, so per-GPU samples attribute to the right rank.
+DDP_GPUS = (0, 1)
+
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from detect_flops import (  # noqa: E402
-    GPU_INDEX, DRAM_ACTIVE_FIELD, V100_PROFILE, actmon_bytes_per_s,
-    read_gpu_sample, read_power_mw, _parse_dcgm_dram_line,
+    DRAM_ACTIVE_FIELD, V100_PROFILE, actmon_bytes_per_s, read_power_mw,
 )
+from nvlink_monitor import NvlinkSampler  # noqa: E402
 
 
-# ── Python interpreter ────────────────────────────────────────────────────────
+# ── Python / torchrun interpreters ────────────────────────────────────────────
 
-def find_venv_python():
-    """
-    Prefer the .venv Python over sys.executable, so the launched workload has the
-    CUDA-enabled torch from the venv regardless of how this script was invoked.
-    """
-    for name in ("python3", "python"):
-        p = os.path.join(REPO_ROOT, ".venv", "bin", name)
+def _venv_bin(name):
+    for cand in (name, name + "3"):
+        p = os.path.join(REPO_ROOT, ".venv", "bin", cand)
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
-    return sys.executable
+    return None
 
 
-def child_env(gpu_index=GPU_INDEX):
-    """Environment for the workload subprocess: pin CUDA to the monitored GPU.
-    With CUDA_DEVICE_ORDER=PCI_BUS_ID, nvidia-smi index gpu_index is the same
-    physical GPU that CUDA_VISIBLE_DEVICES=gpu_index selects (as cuda:0), so the
-    process we measure is the process doing the work."""
+def find_venv_python():
+    return _venv_bin("python") or sys.executable
+
+
+def find_venv_torchrun():
+    tr = _venv_bin("torchrun")
+    if tr is None:
+        raise RuntimeError("torchrun not found in .venv/bin — is torch installed in the venv?")
+    return tr
+
+
+def child_env():
+    """Environment for the torchrun workload. Both GPUs must be visible (DDP), so
+    unlike the single-GPU porting era we do NOT pin CUDA_VISIBLE_DEVICES.
+    PYTHONUNBUFFERED=1 makes the child's stdout line-buffered so the
+    '[redteam] Starting workload' trigger reaches the sampler promptly (torchrun
+    has no -u passthrough)."""
     env = dict(os.environ)
     env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
+    env.pop("CUDA_VISIBLE_DEVICES", None)
+    env["PYTHONUNBUFFERED"] = "1"
     return env
 
 
-# ── Background power sampler ──────────────────────────────────────────────────
+# ── nvidia-smi dual-GPU read ──────────────────────────────────────────────────
+
+def read_gpu_samples(gpu_indices=DDP_GPUS):
+    """One nvidia-smi call for all GPUs → list of (power_mw, util_pct, sm_hz),
+    one tuple per index in gpu_indices order. Raises on read error."""
+    gpu_arg = ",".join(str(g) for g in gpu_indices)
+    out = subprocess.run(
+        ["nvidia-smi", "--query-gpu=power.draw,utilization.gpu,clocks.sm",
+         "--format=csv,noheader,nounits", "-i", gpu_arg],
+        capture_output=True, text=True, check=True).stdout.strip()
+    rows = [ln for ln in out.splitlines() if ln.strip()]
+    res = []
+    for ln in rows:
+        p, u, c = [v.strip() for v in ln.split(",")]
+        res.append((float(p) * 1000.0, float(u), float(c) * 1e6))
+    return res
+
+
+# ── Background power sampler (both GPUs) ──────────────────────────────────────
 
 class PowerSampler:
-    """Samples nvidia-smi power + GPU utilization at POLL_S intervals in a daemon
-    thread. (The Jetson version also scraped tegrastats EMC%; on V100 DRAM
-    activity comes from the DCGM BytesSampler instead, so emc_samples is dropped.)"""
+    """nvidia-smi power + util at POLL_S, over both GPUs. power_samples holds the
+    SUMMED board power (energy integral); util is kept per-GPU for the both-GPU
+    frontier gate."""
 
-    def __init__(self, gpu_index=GPU_INDEX):
-        self.gpu_index      = gpu_index
-        self.power_samples  = []   # (monotonic_t, power_mw)
-        self.gpu_samples    = []   # (monotonic_t, gpu_pct)
-        self._stop          = threading.Event()
-        self._exc           = None
-        self._thread        = threading.Thread(target=self._run, daemon=True)
+    def __init__(self, gpu_indices=DDP_GPUS):
+        self.gpu_indices   = tuple(gpu_indices)
+        self.power_samples = []                       # (t, total_power_mw)
+        self.util_per      = {g: [] for g in self.gpu_indices}   # g -> [(t, util)]
+        self._stop         = threading.Event()
+        self._exc          = None
+        self._thread       = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
         self._thread.start()
@@ -91,8 +120,6 @@ class PowerSampler:
     def stop(self):
         self._stop.set()
         self._thread.join()
-        # Surface any failure that happened in the sampling thread — a swallowed
-        # thread exception would silently corrupt the energy integral.
         if self._exc is not None:
             raise self._exc
 
@@ -100,42 +127,50 @@ class PowerSampler:
         try:
             while not self._stop.is_set():
                 t = time.monotonic()
-                mw, gpu, _clk = read_gpu_sample(self.gpu_index)
-                self.power_samples.append((t, mw))
-                self.gpu_samples.append((t, gpu))
+                rows = read_gpu_samples(self.gpu_indices)
+                self.power_samples.append((t, sum(r[0] for r in rows)))
+                for g, r in zip(self.gpu_indices, rows):
+                    self.util_per[g].append((t, r[1]))
                 self._stop.wait(POLL_S)
         except BaseException as e:
             self._exc = e
 
+    def avg_util_per_gpu(self):
+        return {g: (mean(u for _, u in self.util_per[g]) if self.util_per[g] else None)
+                for g in self.gpu_indices}
 
-# ── DRAM bytes sampler (DCGM DRAM-active, field 1005) ─────────────────────────
+
+# ── DRAM bytes sampler (DCGM field 1005, both GPUs) ───────────────────────────
+
+def _parse_dram_row(line):
+    """`dcgmi dmon -e 1005 -i 0,1` data line → (gpu_idx, fraction) or None."""
+    s = line.strip()
+    if not s or s.startswith("#") or not s.startswith("GPU"):
+        return None
+    toks = s.split()
+    if len(toks) < 3:
+        return None
+    try:
+        return int(toks[1]), float(toks[-1])
+    except ValueError:
+        return None
+
 
 class BytesSampler:
-    """
-    Streams the DRAM-active fraction from `dcgmi dmon -e 1005` (DCGM field 1005,
-    DCGM_FI_PROF_DRAM_ACTIVE) so the calibration sweep can integrate DRAM bytes
-    moved. Mirrors PowerSampler's lifecycle; designed to start/stop on the SAME
-    window as the PowerSampler so bytes are commensurable with net_energy_j /
-    duration_s.
+    """Per-GPU DRAM-active fraction (DCGM field 1005) → DRAM bytes/s, summed across
+    both GPUs for TB_moved. Requires nv-hostengine (root); dcgmi client unprivileged."""
 
-    Requires a running nv-hostengine (root; `sudo nv-hostengine`), but the dcgmi
-    client itself is unprivileged — no sudo here. A spawn failure raises
-    immediately; if the stream produces no samples (e.g. host engine down) the
-    caller is expected to treat that as a hard error (see run_workload /
-    require_samples), not silently drop the byte term. The reader's stderr is
-    merged into stdout so its diagnostics are visible.
-    """
-
-    def __init__(self, gpu_index=GPU_INDEX):
-        self.gpu_index = gpu_index
-        self.samples = []          # (monotonic_t, bytes_per_s)
+    def __init__(self, gpu_indices=DDP_GPUS):
+        self.gpu_indices = tuple(gpu_indices)
+        self.samples = {g: [] for g in self.gpu_indices}   # g -> [(t, bytes_per_s)]
         self.available = False
         self._stop = threading.Event()
         self._exc = None
         self._thread = threading.Thread(target=self._run, daemon=True)
+        gpu_arg = ",".join(str(g) for g in self.gpu_indices)
         self.proc = subprocess.Popen(
-            ["dcgmi", "dmon", "-e", str(DRAM_ACTIVE_FIELD),
-             "-i", str(gpu_index), "-d", str(int(POLL_S * 1000))],
+            ["dcgmi", "dmon", "-e", str(DRAM_ACTIVE_FIELD), "-i", gpu_arg,
+             "-d", str(int(POLL_S * 1000))],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
         )
 
@@ -143,8 +178,6 @@ class BytesSampler:
         self._thread.start()
 
     def stop(self):
-        # Stop the stream by closing the read end of stdout and terminating the
-        # (unprivileged) dcgmi client.
         self._stop.set()
         try:
             self.proc.terminate()
@@ -168,57 +201,58 @@ class BytesSampler:
             for line in iter(self.proc.stdout.readline, ""):
                 if self._stop.is_set():
                     break
-                frac = _parse_dcgm_dram_line(line)
-                if frac is None:
+                parsed = _parse_dram_row(line)
+                if parsed is None:
+                    continue
+                idx, frac = parsed
+                if idx not in self.samples:
                     continue
                 frac = max(0.0, min(1.0, frac))
                 self.available = True
-                self.samples.append((time.monotonic(), actmon_bytes_per_s(frac)))
+                self.samples[idx].append((time.monotonic(), actmon_bytes_per_s(frac)))
         except BaseException as e:
-            # Only an intentional stop is expected here; anything else re-raises.
             if not self._stop.is_set():
                 self._exc = e
 
     def require_samples(self):
-        """Raise if the DCGM stream produced no samples (host engine down / field
-        1005 unavailable on this GPU/driver)."""
         if not self.available:
             raise RuntimeError(
                 "DCGM DRAM-active (field 1005) produced no samples — is "
-                "nv-hostengine running (sudo nv-hostengine) and does "
-                "`dcgmi dmon -e 1005` work on this GPU?")
+                "nv-hostengine running (sudo nv-hostengine)?")
+
+    @staticmethod
+    def _integ(samples):
+        if len(samples) < 2:
+            return 0.0
+        tot = 0.0
+        for i in range(1, len(samples)):
+            t0, b0 = samples[i - 1]; t1, b1 = samples[i]
+            tot += 0.5 * (b0 + b1) * (t1 - t0)
+        return tot
 
     def total_tb(self):
-        """Trapezoidal integration of bytes/s → terabytes, or None if too few samples."""
-        if len(self.samples) < 2:
-            return None
-        total_bytes = 0.0
-        for i in range(1, len(self.samples)):
-            t0, b0 = self.samples[i - 1]
-            t1, b1 = self.samples[i]
-            total_bytes += 0.5 * (b0 + b1) * (t1 - t0)
-        return total_bytes / 1e12
+        """DRAM bytes moved summed across both GPUs → terabytes."""
+        tot = sum(self._integ(self.samples[g]) for g in self.gpu_indices)
+        return tot / 1e12 if any(len(self.samples[g]) >= 2 for g in self.gpu_indices) else None
 
     def avg_bytes_per_s(self):
-        if not self.samples:
-            return None
-        return mean(b for _, b in self.samples)
+        allb = [b for g in self.gpu_indices for _, b in self.samples[g]]
+        return mean(allb) if allb else None
 
     def avg_dram_pct(self):
-        """Average DRAM-active fraction over the window, as a percent (the V100
-        analog of the Jetson EMC%). None if no samples."""
-        if not self.samples:
+        allb = [b for g in self.gpu_indices for _, b in self.samples[g]]
+        if not allb:
             return None
-        peak = V100_PROFILE["PEAK_BW_BYTES_S"]
-        return mean(b for _, b in self.samples) / peak * 100.0
+        # mean per-GPU fraction as a percent
+        return mean(allb) / V100_PROFILE["PEAK_BW_BYTES_S"] * 100.0
 
 
 # ── Idle sampling ─────────────────────────────────────────────────────────────
 
-def sample_idle(duration_s, gpu_index, label):
-    """Blocking idle sample; returns list of (mono_t, power_mw)."""
+def sample_idle(duration_s, gpu_indices, label):
+    """Blocking idle sample of SUMMED both-GPU power; returns [(mono_t, total_mw)]."""
     print(f"  [{label}] sampling idle for {duration_s:.0f}s ...", flush=True)
-    sampler = PowerSampler(gpu_index)
+    sampler = PowerSampler(gpu_indices)
     sampler.start()
     time.sleep(duration_s)
     sampler.stop()
@@ -226,27 +260,31 @@ def sample_idle(duration_s, gpu_index, label):
     if n:
         vals = [mw for _, mw in sampler.power_samples]
         print(f"  [{label}] {n} samples  |  median {median(vals):.1f} mW"
-              f"  stdev {stdev(vals) if n > 1 else 0:.1f} mW", flush=True)
+              f"  stdev {stdev(vals) if n > 1 else 0:.1f} mW (both GPUs)", flush=True)
     return sampler.power_samples
 
 
 # ── Workload execution ────────────────────────────────────────────────────────
 
 def parse_ground_truth_tflops(text):
-    """Extract TFLOPs total from sample_ml_workload.py stdout."""
     m = re.search(r'Ground truth total\s*:\s*([\d.]+)\s*TFLOPs', text)
     return float(m.group(1)) if m else None
 
 
+def parse_n_params(text):
+    m = re.search(r'\[redteam\] Params\s*:\s*(\d+)', text)
+    return int(m.group(1)) if m else None
+
+
 def compute_net_energy(power_samples, idle_baseline_mw):
-    """Trapezoidal integration of net power over the sample timeseries."""
-    net_energy_j   = 0.0
-    net_mw_list    = []
+    """Trapezoidal integration of net (summed) power over the sample timeseries."""
+    net_energy_j = 0.0
+    net_mw_list  = []
     for i in range(1, len(power_samples)):
         t0, mw0 = power_samples[i - 1]
         t1, mw1 = power_samples[i]
         dt      = t1 - t0
-        n0      = max(mw0 - idle_baseline_mw, 0.0) / 1000.0  # W
+        n0      = max(mw0 - idle_baseline_mw, 0.0) / 1000.0
         n1      = max(mw1 - idle_baseline_mw, 0.0) / 1000.0
         net_energy_j += 0.5 * (n0 + n1) * dt
         net_mw_list.append(0.5 * (n0 + n1) * 1000.0)
@@ -254,82 +292,86 @@ def compute_net_energy(power_samples, idle_baseline_mw):
     return net_energy_j, avg_net_mw
 
 
-def run_workload(config, idle_baseline_mw, gpu_index=GPU_INDEX):
-    """
-    Launch sample_ml_workload.py (pinned to gpu_index), sample power + DRAM in
-    parallel, return result dict. stdout is echoed live; power is collected by a
-    background thread.
-    """
-    # "-u" forces the child's stdout unbuffered so the "[redteam] Starting
-    # workload..." trigger below reaches this parent promptly (else piped stdout
-    # is block-buffered and the power sampler starts far too late).
-    #
-    # A config may override the workload entirely via {"script": path,
-    # "args": [...]} — any script that speaks the same stdout protocol (the
-    # "Starting workload" trigger + "Ground truth total : X TFLOPs" line) goes
-    # through this exact sampling path.
-    if "script" in config:
-        cmd = ([find_venv_python(), "-u", config["script"]]
-               + [str(a) for a in config.get("args", [])])
-    else:
-        cmd = [
-            find_venv_python(), "-u", WORKLOAD_SCRIPT,
-            "--steps",      str(config["steps"]),
-            "--batch-size", str(config["batch_size"]),
-            "--seq-len",    str(config["seq_len"]),
-            "--d-model",    str(config["d_model"]),
-        ]
-        for key, flag in (("num_layers", "--num-layers"),
-                          ("nhead", "--nhead"),
-                          ("dim_feedforward", "--dim-feedforward"),
-                          ("precision", "--precision"),
-                          ("optimizer", "--optimizer")):
-            if key in config:
-                cmd += [flag, str(config[key])]
-    print(f"  Launching: {' '.join(cmd[3:])}", flush=True)
+def _torchrun_cmd(config, gpu_indices):
+    nproc = len(gpu_indices)
+    cmd = [find_venv_torchrun(), "--standalone", f"--nproc_per_node={nproc}",
+           WORKLOAD_SCRIPT,
+           "--steps",      str(config["steps"]),
+           "--batch-size", str(config["batch_size"]),
+           "--seq-len",    str(config["seq_len"]),
+           "--d-model",    str(config["d_model"])]
+    for key, flag in (("num_layers", "--num-layers"), ("nhead", "--nhead"),
+                      ("dim_feedforward", "--dim-feedforward"),
+                      ("precision", "--precision"), ("optimizer", "--optimizer")):
+        if key in config:
+            cmd += [flag, str(config[key])]
+    return cmd
 
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        env=child_env(gpu_index),
-    )
 
-    # Power sampling starts only after "[redteam] Starting workload..." so that
-    # CUDA init, model creation, the warmup pass, and the FLOPs probe are all
-    # excluded from the energy integral (they are not in the GT FLOP count).
-    sampler = None
-    bytes_sampler = None
+def measure_step_rate(config, gpu_indices=DDP_GPUS, probe_steps=30):
+    """Auto-size helper: run a short torchrun pass and return steps/s (or None).
+    Used to size the real run to ~150s active (steps = round(150 x rate))."""
+    probe = dict(config); probe["steps"] = probe_steps
+    cmd = _torchrun_cmd(probe, gpu_indices)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, env=child_env())
+    out = proc.communicate()[0]
+    if proc.returncode != 0:
+        return None, out
+    m = re.search(r'Done\.\s*\d+\s*steps in [\d.]+s \(([\d.]+) steps/s\)', out)
+    return (float(m.group(1)) if m else None), out
+
+
+def run_workload(config, idle_baseline_mw, gpu_indices=DDP_GPUS):
+    """Launch the DDP workload under torchrun on both GPUs; sample summed power,
+    per-GPU util, DRAM bytes, and NVLink/PCIe bytes on the same window; integrate
+    net energy vs the aggregate FlopCounterMode ground truth. Returns a record."""
+    cmd = _torchrun_cmd(config, gpu_indices)
+    print(f"  Launching: torchrun x{len(gpu_indices)}  {' '.join(cmd[4:])}", flush=True)
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, env=child_env())
+
+    sampler = bytes_sampler = nvlink_sampler = None
     t_start = None
-
     output_lines = []
+    oom = False
     for line in iter(proc.stdout.readline, ""):
         print(line, end="", flush=True)
         output_lines.append(line)
+        if "OutOfMemoryError" in line or "CUDA out of memory" in line:
+            oom = True
         if sampler is None and "[redteam] Starting workload" in line:
             t_start = time.monotonic()
-            sampler = PowerSampler(gpu_index)
-            sampler.start()
-            # Same window as the power sampler so bytes are commensurable.
-            bytes_sampler = BytesSampler(gpu_index)
-            bytes_sampler.start()
+            sampler = PowerSampler(gpu_indices);        sampler.start()
+            bytes_sampler = BytesSampler(gpu_indices);  bytes_sampler.start()
+            nvlink_sampler = NvlinkSampler(gpu_indices); nvlink_sampler.start()
     proc.wait()
     stdout_text = "".join(output_lines)
 
-    # The trigger gates sampling; if it never appeared the workload did not start
-    # as expected — a hard error, not a silent zero-duration run.
     if sampler is None:
-        raise RuntimeError(
-            f"workload never emitted '[redteam] Starting workload' "
-            f"(exit code {proc.returncode}); cannot sample. Last output:\n"
-            f"{stdout_text[-800:]}")
+        # No sampling window opened. OOM or another launch failure — return a
+        # returncode!=0 record so the sweep logs it and continues (not a crash).
+        note = "OOM" if oom else f"no-start (exit {proc.returncode})"
+        print(f"  WARNING: workload never started sampling ({note})", flush=True)
+        return {"config": config, "returncode": proc.returncode or 1,
+                "error": note, "ddp": True, "world_size": len(gpu_indices),
+                "precision": config.get("precision", "fp16"), "mode": "fp16_ddp",
+                "ground_truth_tf": None, "net_energy_j": 0.0, "duration_s": 0.0,
+                "avg_gpu_pct": None, "tb_moved": None}
 
     sampler.stop()
     duration_s = time.monotonic() - t_start
-    bytes_sampler.stop()          # created alongside sampler, so never None here
-    bytes_sampler.require_samples()   # loud if DCGM produced nothing
-    tb_moved = bytes_sampler.total_tb()
+    bytes_sampler.stop();  bytes_sampler.require_samples()
+    nvlink_sampler.stop(); nvlink_sampler.require_samples()
+
+    tb_moved        = bytes_sampler.total_tb()
     avg_bytes_per_s = bytes_sampler.avg_bytes_per_s()
-    avg_dram_pct = bytes_sampler.avg_dram_pct()
-    gt_tflops = parse_ground_truth_tflops(stdout_text)
+    avg_dram_pct    = bytes_sampler.avg_dram_pct()
+    gt_tflops       = parse_ground_truth_tflops(stdout_text)
+    n_params        = parse_n_params(stdout_text)
+    util_per        = sampler.avg_util_per_gpu()
+    nvl             = nvlink_sampler.record_fields()
 
     if proc.returncode != 0:
         print(f"  WARNING: workload exited with code {proc.returncode}", flush=True)
@@ -338,27 +380,43 @@ def run_workload(config, idle_baseline_mw, gpu_index=GPU_INDEX):
     avg_net_w   = avg_net_mw / 1000.0 if avg_net_mw is not None else None
     j_per_tflop = (net_energy_j / gt_tflops
                    if gt_tflops and gt_tflops > 0 and net_energy_j > 0 else None)
-
     raw_mw = [mw for _, mw in sampler.power_samples]
 
-    return {
+    # both-GPU frontier gate: min per-GPU util (min>=80  <=>  both>=80)
+    util_vals = [u for u in util_per.values() if u is not None]
+    avg_gpu_min = min(util_vals) if util_vals else None
+    steps = config["steps"]
+
+    rec = {
         "config":           config,
+        "ddp":              True,
+        "world_size":       len(gpu_indices),
+        "precision":        config.get("precision", "fp16"),
+        "mode":             "fp16_ddp",
         "returncode":       proc.returncode,
         "duration_s":       duration_s,
         "idle_baseline_mw": idle_baseline_mw,
         "power_samples":    sampler.power_samples,
-        "gpu_samples":      sampler.gpu_samples,
-        "emc_samples":      [],
         "ground_truth_tf":  gt_tflops,
+        "n_params":         n_params,
         "net_energy_j":     net_energy_j,
         "avg_net_power_w":  avg_net_w,
         "j_per_tflop":      j_per_tflop,
-        "avg_raw_mw":       mean(raw_mw)    if raw_mw else None,
-        "peak_raw_mw":      max(raw_mw)     if raw_mw else None,
-        "avg_gpu_pct":      mean(g for _, g in sampler.gpu_samples)
-                            if sampler.gpu_samples else None,
+        "avg_raw_mw":       mean(raw_mw) if raw_mw else None,
+        "peak_raw_mw":      max(raw_mw)  if raw_mw else None,
+        "avg_gpu_pct":      avg_gpu_min,            # min across GPUs (both-GPU gate)
+        "avg_gpu_pct_gpu0": util_per.get(gpu_indices[0]),
+        "avg_gpu_pct_gpu1": util_per.get(gpu_indices[1]),
         "avg_emc_pct":      avg_dram_pct,
         "tb_moved":         tb_moved,
         "avg_bytes_per_s":  avg_bytes_per_s,
         "n_power_samples":  len(sampler.power_samples),
+        # Task 1 interconnect signal
+        "nvlink_total_bytes":    nvl["nvlink_total_bytes"],
+        "nvlink_bytes_per_step": nvl["nvlink_total_bytes"] / steps if steps else None,
+        "pcie_total_bytes":      sum(nvl.get(f"gpu{g}_pcie_tx_bytes", 0.0)
+                                     + nvl.get(f"gpu{g}_pcie_rx_bytes", 0.0)
+                                     for g in gpu_indices),
+        "grad_bytes_pred":       (n_params * 4) if n_params else None,
     }
+    return rec

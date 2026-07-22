@@ -144,6 +144,10 @@ def run_training(steps, batch_size, seq_len, d_model,
         model = TinyTransformer(d_model=d_model, nhead=nhead,
                                 num_layers=num_layers,
                                 dim_feedforward=dim_feedforward).to(device)
+        n_params = sum(p.numel() for p in model.parameters())
+        # Param count → predicted grad all-reduce bytes/step (n_params × 4 B, FP32
+        # even under AMP); the blue-team NVLink monitor cross-checks against this.
+        log(f"[redteam] Params : {n_params} ({n_params/1e6:.1f}M)")
 
         # Count FLOPs on the raw (unwrapped) model, before the DDP wrap, so the
         # all-reduce hooks don't perturb FlopCounterMode's backward.

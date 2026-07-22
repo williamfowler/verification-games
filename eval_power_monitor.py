@@ -59,74 +59,100 @@ import detect_flops
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "power_calibration"))
 from calibrate_power import (
-    GPU_INDEX,
-    read_power_mw,
+    DDP_GPUS,
+    read_gpu_samples,
     BytesSampler,
     sample_idle,
     run_workload,
+    measure_step_rate,
     POLL_S,
 )
+from nvlink_monitor import NvlinkSampler
 
-# ── Workload pool ──────────────────────────────────────────────────────────────
-# Transformer configs spanning the space. The high-utilization ones (large
-# d_model, big batch/seq, or 6 layers) are the frontier-like targets; the small
-# batch=8 seq=64 ones at modest d_model deliberately fall below the frontier gate
-# so the report shows where the estimator stops being trustworthy. `steps` is
-# sized for ~2-4 min of active training per run at observed Orin Nano step rates,
-# yielding several hundred power samples. nhead stays at the workload default (4),
-# which divides every d_model here. The TRAIN/TEST split is drawn randomly from
-# the frontier subset at run time (see main); it is not fixed per config.
+# ── Workload pool (V100 fp16-AMP DDP) ────────────────────────────────────────
+# The 91-config sweep for the DDP regime (git history has the Jetson-era 38). All
+# run under torchrun on BOTH V100s; batch_size is PER-GPU. `steps` is not fixed
+# here — it is auto-sized per config at run time (measure step-rate over a short
+# probe, then steps = round(TARGET_ACTIVE_S x rate)) so each run does ~the same
+# active wall-clock regardless of shape. The both-GPU >=80% frontier gate and the
+# random TRAIN/TEST split are applied in main().
+#
+# Families: A dense-medium fp16 (primary) · B long-sequence · C wide-FFN ·
+# E deep-narrow (launch-overhead probe) · F Jetson-scale boundary probes ·
+# G fp32 contrast twins · H nhead geometry at fixed FLOPs · I SGD-vs-AdamW twins.
+
+def _cfg(family, d_model, seq_len, batch_size, dim_feedforward, num_layers, nhead,
+         optimizer="adamw", precision="fp16"):
+    return {"family": family, "d_model": d_model, "seq_len": seq_len,
+            "batch_size": batch_size, "dim_feedforward": dim_feedforward,
+            "num_layers": num_layers, "nhead": nhead,
+            "optimizer": optimizer, "precision": precision}
+
 CONFIGS = [
-    # — frontier-like: large / high-batch / high-seq / deep (expect high util) —
-    {"d_model": 256, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 4000},
-    {"d_model": 256, "batch_size": 8,  "seq_len": 256, "num_layers": 3, "steps": 3500},
-    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500},
-    {"d_model": 384, "batch_size": 8,  "seq_len": 128, "num_layers": 6, "steps": 2800},
-    {"d_model": 512, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2600},
-    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400},
-    {"d_model": 512, "batch_size": 16, "seq_len": 128, "num_layers": 6, "steps": 1200},
-    {"d_model": 640, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000},
-    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400},
-    {"d_model": 768, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000},
-    {"d_model": 768, "batch_size": 8,  "seq_len": 128, "num_layers": 6, "steps": 1400},
-    # — varied arithmetic intensity: spread FLOPs-per-byte so the 3-param/EMC fit
-    #   can separate E_PER_TB_J from E_MARGINAL (otherwise gt and tb are collinear
-    #   on the frontier line above and E_PER_TB_J is underdetermined). Large
-    #   batch*seq with small-ish d_model leans memory-bound (low AI); d512 mid-AI. —
-    {"d_model": 256, "batch_size": 16, "seq_len": 256, "num_layers": 3, "steps": 2200},
-    {"d_model": 384, "batch_size": 16, "seq_len": 256, "num_layers": 3, "steps": 1600},
-    {"d_model": 512, "batch_size": 16, "seq_len": 256, "num_layers": 3, "steps": 1200},
-    # — sub-frontier: small, lightly-loaded (expect to fall below the gate) —
-    {"d_model": 128, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4800},
-    {"d_model": 192, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4800},
-    {"d_model": 256, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4800},
-    {"d_model": 384, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4500},
-    {"d_model": 512, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4500},
-    # — precision axis (2026-07-07): the monitor cannot observe precision, so the
-    #   fit is precision-BLIND across all of these. NB this build's torch default
-    #   is matmul TF32 *off* — the unsuffixed configs above are fp32; "tf32" is a
-    #   new tensor-core mode the pre-2026-07 calibration never saw. —
-    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "precision": "tf32"},
-    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "precision": "tf32"},
-    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "precision": "tf32"},
-    {"d_model": 768, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000, "precision": "tf32"},
-    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "precision": "fp16"},
-    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "precision": "fp16"},
-    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "precision": "fp16"},
-    {"d_model": 768, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000, "precision": "fp16"},
-    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "precision": "bf16"},
-    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "precision": "bf16"},
-    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "precision": "bf16"},
-    {"d_model": 768, "batch_size": 8,  "seq_len": 64,  "num_layers": 3, "steps": 4000, "precision": "bf16"},
-    # — architecture spread within the transformer family (all fp32) —
-    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 2500, "nhead": 8},
-    {"d_model": 512, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2600, "nhead": 2},
-    {"d_model": 384, "batch_size": 16, "seq_len": 128, "num_layers": 3, "steps": 1100, "dim_feedforward": 3072},
-    {"d_model": 512, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 900,  "dim_feedforward": 4096},
-    {"d_model": 256, "batch_size": 8,  "seq_len": 512, "num_layers": 3, "steps": 1500},
-    {"d_model": 512, "batch_size": 16, "seq_len": 64,  "num_layers": 6, "steps": 2400, "optimizer": "sgd"},
-    {"d_model": 640, "batch_size": 8,  "seq_len": 128, "num_layers": 3, "steps": 2400, "optimizer": "sgd"},
+    # A — dense medium fp16 (tensor-core GEMMs; primary pass candidates)
+    _cfg("A", 1024, 256,  8, 4096,  6,  8), _cfg("A", 1024, 256,  8, 4096, 12,  8),
+    _cfg("A", 1024, 256,  8, 4096, 16,  8), _cfg("A", 1024, 256, 16, 4096,  6,  8),
+    _cfg("A", 1024, 256, 16, 4096, 12,  8), _cfg("A", 1024, 256, 16, 4096, 16,  8),
+    _cfg("A", 1024, 256, 32, 4096,  6,  8), _cfg("A", 1024, 256, 32, 4096, 12,  8),
+    _cfg("A", 1024, 256, 32, 4096, 16,  8), _cfg("A", 1024, 512,  8, 4096,  6,  8),
+    _cfg("A", 1024, 512,  8, 4096, 12,  8), _cfg("A", 1024, 512,  8, 4096, 16,  8),
+    _cfg("A", 1024, 512, 16, 4096,  6,  8), _cfg("A", 1024, 512, 16, 4096, 12,  8),
+    _cfg("A", 1024, 512, 16, 4096, 16,  8), _cfg("A", 1024, 512, 32, 4096,  6,  8),
+    _cfg("A", 1024, 512, 32, 4096, 12,  8), _cfg("A", 1024,1024,  8, 4096,  6,  8),
+    _cfg("A", 1024,1024,  8, 4096, 12,  8), _cfg("A", 1024,1024,  8, 4096, 16,  8),
+    _cfg("A", 1024,1024, 16, 4096,  6,  8), _cfg("A", 1024,1024, 16, 4096, 12,  8),
+    _cfg("A", 1024,1024, 32, 4096,  6,  8), _cfg("A", 1536, 256,  8, 6144,  6, 12),
+    _cfg("A", 1536, 256,  8, 6144, 12, 12), _cfg("A", 1536, 256,  8, 6144, 16, 12),
+    _cfg("A", 1536, 256, 16, 6144,  6, 12), _cfg("A", 1536, 256, 16, 6144, 12, 12),
+    _cfg("A", 1536, 256, 32, 6144,  6, 12), _cfg("A", 1536, 512,  8, 6144,  6, 12),
+    _cfg("A", 1536, 512,  8, 6144, 12, 12), _cfg("A", 1536, 512, 16, 6144,  6, 12),
+    _cfg("A", 1536, 512, 32, 6144,  6, 12), _cfg("A", 1536,1024,  8, 6144,  6, 12),
+    _cfg("A", 1536,1024, 16, 6144,  6, 12), _cfg("A", 2048, 256,  8, 8192,  6, 16),
+    _cfg("A", 2048, 256, 16, 8192,  6, 16), _cfg("A", 2048, 256, 32, 8192,  6, 16),
+    _cfg("A", 2048, 512,  8, 8192,  6, 16), _cfg("A", 2048, 512, 16, 8192,  6, 16),
+    _cfg("A", 2048,1024,  8, 8192,  6, 16),
+    # B — long-sequence attention-heavy
+    _cfg("B",  768,2048,  2, 3072,  6, 12), _cfg("B",  768,2048,  2, 3072, 12, 12),
+    _cfg("B",  768,2048,  4, 3072,  6, 12), _cfg("B",  768,2048,  4, 3072, 12, 12),
+    _cfg("B",  768,2048,  8, 3072,  6, 12), _cfg("B",  768,2048,  8, 3072, 12, 12),
+    _cfg("B",  768,4096,  2, 3072,  6, 12), _cfg("B",  768,4096,  2, 3072, 12, 12),
+    _cfg("B",  768,4096,  4, 3072,  6, 12), _cfg("B",  768,4096,  4, 3072, 12, 12),
+    _cfg("B",  768,4096,  8, 3072,  6, 12), _cfg("B", 1024,2048,  2, 4096,  6, 16),
+    _cfg("B", 1024,2048,  2, 4096, 12, 16), _cfg("B", 1024,2048,  4, 4096,  6, 16),
+    _cfg("B", 1024,2048,  4, 4096, 12, 16), _cfg("B", 1024,2048,  8, 4096,  6, 16),
+    _cfg("B", 1024,2048,  8, 4096, 12, 16), _cfg("B", 1024,4096,  2, 4096,  6, 16),
+    _cfg("B", 1024,4096,  2, 4096, 12, 16), _cfg("B", 1024,4096,  4, 4096,  6, 16),
+    _cfg("B", 1024,4096,  4, 4096, 12, 16), _cfg("B", 1024,4096,  8, 4096,  6, 16),
+    # C — wide-FFN (d_ff = 8 x d_model)
+    _cfg("C", 1024, 512,  8, 8192,  6,  8), _cfg("C", 1024, 512, 16, 8192,  6,  8),
+    _cfg("C", 1024, 512, 32, 8192,  6,  8), _cfg("C", 1024,1024,  8, 8192,  6,  8),
+    _cfg("C", 1024,1024, 16, 8192,  6,  8), _cfg("C", 1536, 512,  8,12288,  6, 12),
+    _cfg("C", 1536, 512, 16,12288,  6, 12), _cfg("C", 1536,1024,  8,12288,  6, 12),
+    # E — deep-narrow (launch-overhead probe)
+    _cfg("E",  512, 512, 16, 2048, 24,  8), _cfg("E",  512, 512, 32, 2048, 24,  8),
+    _cfg("E",  512, 512, 16, 2048, 32,  8), _cfg("E",  768, 512, 16, 3072, 24,  8),
+    # F — Jetson-frontier-scale boundary probes (expected marginal/fail)
+    _cfg("F",  512, 256, 16, 2048,  6,  8), _cfg("F",  512, 512,  8, 2048,  3,  8),
+    _cfg("F",  768, 256, 16, 3072,  6,  8), _cfg("F",  768, 512, 16, 3072,  6,  8),
+    _cfg("F",  768, 128,  8, 3072,  6,  8), _cfg("F", 1024, 256,  8, 4096,  3,  8),
+    _cfg("F", 1024, 128, 32, 4096,  6,  8), _cfg("F",  512,1024, 16, 2048, 12,  8),
+    # G — fp32 contrast twins (precision axis)
+    _cfg("G", 1024, 512, 16, 4096, 12,  8, "adamw", "fp32"),
+    _cfg("G",  768, 512, 16, 3072,  6,  8, "adamw", "fp32"),
+    # H — nhead geometry at fixed FLOPs (nhead=32 drops head_dim below 64)
+    _cfg("H", 1024, 512, 16, 4096, 12,  4), _cfg("H", 1024, 512, 16, 4096, 12, 16),
+    _cfg("H", 1024, 512, 16, 4096, 12, 32),
+    # I — SGD-vs-AdamW contrast twins
+    _cfg("I", 1024, 512, 16, 4096, 12,  8, "sgd"), _cfg("I", 1536, 512, 16, 6144, 12, 12, "sgd"),
+    _cfg("I", 1024,1024, 16, 4096, 12,  8, "sgd"),
 ]
+
+# Target active wall-clock per run for auto-sizing (steps = round(TARGET_ACTIVE_S
+# x steps/s)). The harness design wants "several hundred" 2 Hz power samples; at
+# 100 s that is ~200 samples — ample for the energy integral — while keeping the
+# 91-config sweep to a tractable wall-clock. (The Jetson-era note targeted 2-4 min.)
+TARGET_ACTIVE_S = 100
+STEPS_MIN, STEPS_MAX = 40, 20000
 
 DEFAULT_OUTPUT        = "eval_results.txt"
 BASELINE_SECONDS      = 90       # single startup idle baseline (>=180 samples at 2 Hz)
@@ -391,11 +417,18 @@ def is_frontier(r):
 # pre-JSON sweeps (e.g. old/eval_results.txt from 2026-06-30) remain analyzable.
 
 # Scalar fields serialized per record — everything the gate/fit/report needs.
+# DDP-regime additions: mode/precision/ddp (so fp16-DDP records never pool with
+# the legacy fp32 single-GPU fit), per-GPU util, and the Task 1 interconnect bytes.
 RECORD_SCALAR_FIELDS = [
     "label", "split", "returncode", "duration_s", "idle_baseline_mw",
     "ground_truth_tf", "net_energy_j", "avg_net_power_w", "j_per_tflop",
     "avg_raw_mw", "peak_raw_mw", "avg_gpu_pct", "avg_emc_pct",
     "tb_moved", "avg_bytes_per_s", "n_power_samples",
+    # DDP regime
+    "ddp", "world_size", "mode", "precision", "n_params",
+    "avg_gpu_pct_gpu0", "avg_gpu_pct_gpu1",
+    "nvlink_total_bytes", "nvlink_bytes_per_step", "pcie_total_bytes",
+    "grad_bytes_pred",
 ]
 
 # Workload-arg defaults, used when a config (e.g. reconstructed from an old
@@ -403,14 +436,14 @@ RECORD_SCALAR_FIELDS = [
 # KEEP IN SYNC with sample_ml_workload.py's argparse defaults (not imported —
 # that module pulls in torch at import time); a drift here silently skews
 # labels and holdout splits.
-# NOTE precision: this build's torch defaults to matmul TF32 *off*, so every
-# sweep before 2026-07-07 effectively ran fp32 matmul — "fp32" is the baseline.
-CONFIG_DEFAULTS = {"nhead": 4, "dim_feedforward": 512,
-                   "precision": "fp32", "optimizer": "adamw"}
+# DDP regime: fp16 AMP is the baseline precision; workload defaults are nhead=8,
+# dim_feedforward=4096.
+CONFIG_DEFAULTS = {"nhead": 8, "dim_feedforward": 4096,
+                   "precision": "fp16", "optimizer": "adamw"}
 
 
 def dump_records_json(path, records, baseline_mw, baseline_seconds,
-                      fingerprint=None):
+                      fingerprint=None, quiet=False):
     payload = {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "baseline_mw": baseline_mw,
@@ -423,7 +456,8 @@ def dump_records_json(path, records, baseline_mw, baseline_seconds,
     }
     with open(path, "w") as f:
         json.dump(payload, f, indent=1)
-    print(f"Records JSON written to {path}")
+    if not quiet:
+        print(f"Records JSON written to {path}")
 
 
 def parse_label(label):
@@ -876,32 +910,63 @@ def run_bias_report(paths, output_path):
 
 # ── Run + report ───────────────────────────────────────────────────────────────
 
-def run_sweep(configs, idle_baseline_mw, gpu_index):
-    """Run every config against the single shared idle baseline. The frontier
-    gate and TRAIN/TEST assignment are applied afterward in main()."""
+def _excluded_record(cfg, label, reason):
+    return {"config": cfg, "label": label, "split": "excl", "returncode": 1,
+            "error": reason, "ddp": True, "world_size": len(DDP_GPUS),
+            "mode": "fp16_ddp", "precision": cfg.get("precision", "fp16"),
+            "ground_truth_tf": None, "net_energy_j": 0.0, "duration_s": 0.0,
+            "avg_gpu_pct": None, "tb_moved": None}
+
+
+def run_sweep(configs, idle_baseline_mw, gpu_indices, dump_cb=None):
+    """Run every config against the shared idle baseline. Each config's `steps` is
+    auto-sized from a short probe (steps = round(TARGET_ACTIVE_S x steps/s)) so
+    every run does ~the same active wall-clock. OOM / sizing failures become
+    excluded records (logged, not crashes). dump_cb(records) fires after each
+    config so a crash mid-sweep never loses progress. Frontier gate + split apply
+    later in main()."""
     records = []
     for i, cfg in enumerate(configs):
-        print(f"\n[{i+1}/{len(configs)}] {config_label(cfg)}"
-              f"  steps={cfg['steps']}", flush=True)
-        result = run_workload(cfg, idle_baseline_mw, gpu_index)
-        result["label"] = config_label(cfg)
+        label = config_label(cfg)
+        fam = cfg.get("family", "?")
+        # ── auto-size steps ──
+        print(f"\n[{i+1}/{len(configs)}] {label}  (fam {fam})  sizing...", flush=True)
+        rate, probe_out = measure_step_rate(cfg, gpu_indices)
+        if rate is None or rate <= 0:
+            oom = "out of memory" in probe_out.lower() or "OutOfMemoryError" in probe_out
+            reason = "OOM" if oom else "sizing-failed"
+            print(f"  WARNING: {label} {reason} — excluded", flush=True)
+            records.append(_excluded_record(cfg, label, reason))
+            if dump_cb:
+                dump_cb(records)
+            continue
+        cfg["steps"] = max(STEPS_MIN, min(STEPS_MAX, int(round(TARGET_ACTIVE_S * rate))))
+        print(f"  sized: {rate:.2f} steps/s -> steps={cfg['steps']}"
+              f"  (~{cfg['steps']/rate:.0f}s active)", flush=True)
+
+        # ── measured run ──
+        result = run_workload(cfg, idle_baseline_mw, gpu_indices)
+        result["label"] = label
         result["split"] = "excl"   # overwritten for the frontier runs that get split
 
         if result["returncode"] != 0:
-            print(f"  WARNING: {config_label(cfg)} exited {result['returncode']}"
-                  f" — excluded", flush=True)
+            print(f"  WARNING: {label} exited {result['returncode']}"
+                  f" ({result.get('error','')}) — excluded", flush=True)
         elif result["ground_truth_tf"] is None or result["net_energy_j"] <= 0:
-            print(f"  WARNING: {config_label(cfg)} missing GT or zero energy"
-                  f" — excluded", flush=True)
+            print(f"  WARNING: {label} missing GT or zero energy — excluded", flush=True)
         else:
-            tag = "frontier" if is_frontier(result) else "sub-frontier"
-            gpu = result["avg_gpu_pct"]
-            gpu_s = f"{gpu:.0f}%" if gpu is not None else "NA"
-            print(f"  -> GT {result['ground_truth_tf']:.4f} TFLOPs"
-                  f"  | net {result['net_energy_j']:.2f} J"
-                  f"  | {result['duration_s']:.1f} s"
-                  f"  | gpu {gpu_s}  | {tag}", flush=True)
+            tag = "FRONTIER" if is_frontier(result) else "sub-frontier"
+            g0, g1 = result.get("avg_gpu_pct_gpu0"), result.get("avg_gpu_pct_gpu1")
+            gpu_s = (f"{g0:.0f}/{g1:.0f}%" if g0 is not None and g1 is not None else "NA")
+            nvl = result.get("nvlink_bytes_per_step")
+            nvl_s = f"{nvl/1e6:.0f}MB/step" if nvl else "NA"
+            print(f"  -> GT {result['ground_truth_tf']:.2f} TFLOPs"
+                  f"  | net {result['net_energy_j']:.0f} J"
+                  f"  | {result['duration_s']:.0f}s"
+                  f"  | gpu {gpu_s}  | NVLink {nvl_s}  | {tag}", flush=True)
         records.append(result)
+        if dump_cb:
+            dump_cb(records)
     return records
 
 
@@ -1137,50 +1202,50 @@ def run_sweep_session(args):
     """The device-bound half: sensors, single idle baseline, full workload sweep.
     Returns (records, idle_baseline_mw). Dumps the records JSON before returning
     so a crash later in analysis never loses the sweep."""
-    gpu_index = GPU_INDEX
-    read_power_mw(gpu_index)   # raises loudly if nvidia-smi is unreadable
-    print(f"nvidia-smi power OK (GPU {gpu_index}).")
+    gpu_indices = DDP_GPUS
+    read_gpu_samples(gpu_indices)   # raises loudly if nvidia-smi is unreadable
+    print(f"nvidia-smi power/util OK (GPUs {list(gpu_indices)}).")
 
-    # Probe the DCGM DRAM-active stream (field 1005) before the sweep so a missing
-    # nv-hostengine fails here, not 90s into the baseline. A short window must
-    # yield at least one sample.
-    probe = BytesSampler(gpu_index)
-    probe.start()
-    time.sleep(3.0)
-    probe.stop()
-    probe.require_samples()
+    # Probe the DCGM streams (DRAM-active 1005; NVLink/PCIe 1009-1012) before the
+    # sweep so a missing nv-hostengine fails here, not deep into the run.
+    probe = BytesSampler(gpu_indices)
+    probe.start(); time.sleep(3.0); probe.stop(); probe.require_samples()
     print("DCGM DRAM-active (field 1005) OK.")
+    nvp = NvlinkSampler(gpu_indices)
+    nvp.start(); time.sleep(2.0); nvp.stop(); nvp.require_samples()
+    print("DCGM NVLink/PCIe (fields 1009-1012) OK.")
 
-    # ── Single idle baseline (measured once, before any workload) ─────────
+    # ── Single idle baseline (both GPUs summed, measured once) ─────────
     print(f"\nMeasuring single idle baseline ({args.baseline_seconds}s)."
           f" Ensure no GPU workloads are running.", flush=True)
-    idle = sample_idle(args.baseline_seconds, gpu_index, "baseline")
+    idle = sample_idle(args.baseline_seconds, gpu_indices, "baseline")
     idle_mw = [mw for _, mw in idle]
     if not idle_mw:
-        # The baseline is critical (it sets the matched set); no samples means
-        # something is wrong with sampling — fail loudly rather than fall back.
         raise RuntimeError(
             "no idle power samples collected — cannot establish a baseline "
             "(check nvidia-smi and POLL_S timing).")
     idle_baseline_mw = median(idle_mw)
     sd = stdev(idle_mw) if len(idle_mw) > 1 else 0.0
-    print(f"Idle baseline: {idle_baseline_mw:.1f} mW"
+    print(f"Idle baseline: {idle_baseline_mw:.1f} mW (both GPUs)"
           f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
           f"  — shared by ALL workloads", flush=True)
 
-    # ── Run the workload pool against that one baseline ───────────────────
+    # ── Pool filter (precision subset) ────────────────────────────────────
     configs = CONFIGS
-    if args.pool == "fp32":
-        configs = [c for c in CONFIGS
-                   if c.get("precision", "fp32") == "fp32"]
-        print(f"Pool: fp32-only — {len(configs)} of {len(CONFIGS)} configs")
-    records = run_sweep(configs, idle_baseline_mw, gpu_index)
+    if args.pool in ("fp16", "fp32"):
+        configs = [c for c in CONFIGS if c.get("precision", "fp16") == args.pool]
+        print(f"Pool: {args.pool}-only — {len(configs)} of {len(CONFIGS)} configs")
 
-    # Fingerprint the device + power mode this sweep (and thus any constants it
-    # recommends) is matched to.
     fingerprint = detect_flops.live_fingerprint()
     records_json = (args.records_json
                     or os.path.splitext(args.output)[0] + "_records.json")
+
+    # Dump after every config so a crash mid-sweep never loses progress.
+    def dump_cb(recs):
+        dump_records_json(records_json, recs, idle_baseline_mw,
+                          args.baseline_seconds, fingerprint, quiet=True)
+
+    records = run_sweep(configs, idle_baseline_mw, gpu_indices, dump_cb=dump_cb)
     dump_records_json(records_json, records, idle_baseline_mw,
                       args.baseline_seconds, fingerprint)
     return records, idle_baseline_mw, fingerprint
@@ -1219,10 +1284,10 @@ def main():
                              " (JSON dump or report with RAW RECORDS); errors are"
                              " leave-one-out within each trial's fp32 frontier pool."
                              f" Writes to --output (default {DEFAULT_BIAS_OUTPUT})")
-    parser.add_argument("--pool", default="all", choices=["all", "fp32"],
-                        help="Which CONFIGS to sweep: 'fp32' drops the tf32/fp16/"
-                             "bf16 precision variants (e.g. for a power-mode"
-                             " replication run)")
+    parser.add_argument("--pool", default="all", choices=["all", "fp16", "fp32"],
+                        help="Which CONFIGS to sweep by precision: 'fp16' (the "
+                             "DDP regime), 'fp32' (family-G contrast twins), or "
+                             "'all' (default, all 91).")
     args = parser.parse_args()
 
     if args.bias_report:

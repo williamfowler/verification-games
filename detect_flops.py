@@ -39,8 +39,10 @@ V100_PROFILE = {
     "PEAK_BW_BYTES_S":  900.0e9,       # HBM2 peak bandwidth
 }
 
-# Roofline is an auxiliary signal. On V100 the matmul default is FP32.
-ASSUMED_PRECISION = "FP32"
+# Roofline is an auxiliary signal. The DDP regime trains in FP16 AMP (that's what
+# the V100 tensor cores are for), so the roofline uses the FP16 tensor-core peak
+# (125 TFLOPS). fp32 remains a valid contrast precision but is no longer the norm.
+ASSUMED_PRECISION = "FP16"
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 # /var/log needs root; on this box the daemon runs unprivileged, so the SQLite
