@@ -46,14 +46,19 @@ re-running calibration, not reusing the numbers in `detect_flops.py`.
 
 ## Reproducing the experiment
 
-**1. Calibrate.** Runs a sweep of ~26 transformer training configs (~60–70
-min), measures the idle power baseline at startup, fits the estimator
-constants to the runs that cleared the 80% GPU-utilization gate, and scores
-them on a held-out split:
+**1. Calibrate.** Runs a sweep of transformer training configs (~50–70 min),
+measures the idle power baseline at startup, fits the estimator constants to
+the runs that cleared the 80% GPU-utilization gate, and scores them on a
+held-out split:
 
 ```bash
-.venv/bin/python3 eval_power_monitor.py --output eval_results.txt
+.venv/bin/python3 eval_power_monitor.py --pool fp32 --output eval_results.txt
 ```
+
+`--pool fp32` matches the report's calibration scope. The default (`--pool
+all`) additionally sweeps tf32/fp16/bf16 variants — useful for reproducing the
+report's precision discussion, but those runs land in the fit and degrade it
+(precision is unobservable from power; see the report).
 
 Paste the printed `RECOMMENDED CONSTANTS` block (including the idle baseline
 and calibration fingerprint) into the marked section of `detect_flops.py` —
@@ -73,14 +78,18 @@ physically interpretable; it's otherwise absorbed into the fit):
 sudo .venv/bin/python3 detect_flops.py
 ```
 
-In another, run a sample training workload:
+In another, run a sample training workload big enough to keep the GPU ~100%
+busy (~30 s):
 
 ```bash
-.venv/bin/python3 sample_ml_workload.py --steps 150 --batch-size 8 --seq-len 64 --d-model 128
+.venv/bin/python3 sample_ml_workload.py --steps 600 --batch-size 8 --seq-len 128 --d-model 512
 ```
 
 The workload prints its ground-truth TFLOPs; compare with the "Power estimate"
-the daemon prints when the session ends.
+the daemon prints when the session ends. Expect a few percent error, shrinking
+as runs get longer (the fixed overhead term weighs more on short runs). Small
+workloads that don't saturate the GPU read as ≤ 0 ("sub-frontier") — the
+estimator is deliberately a frontier-scale detector, not a general meter.
 
 **3. Figures.** `eval_power_monitor.py` writes its per-run records to
 `*_records.json`; the repo's checked-in records (`eval_results_v2`,
