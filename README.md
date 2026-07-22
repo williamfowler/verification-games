@@ -15,6 +15,32 @@ The full report is in `writeup/` (PDF). Headline result: on 21 "frontier"
 transformer training workloads (GPU busy ≥ 80%), the calibrated estimator is
 within 10% of ground truth on held-out workloads.
 
+## Reproduced on dual-V100 (x86)
+
+This tree has been **ported from the Jetson Orin Nano to an x86 dual-Tesla-V100
+server** (Ubuntu 24.04, driver 580 / CUDA 13, standard PyPI torch). The
+estimator math, calibration/fitting, and figure scripts are unchanged; only the
+signal-acquisition layer was re-sourced (see the top of `detect_flops.py`):
+
+| Signal | Jetson source | V100 substitute |
+|---|---|---|
+| Board power | INA3221 `VDD_CPU_GPU_CV` rail | `nvidia-smi power.draw` for the monitored GPU |
+| GPU utilization (frontier gate) | `tegrastats GR3D_FREQ` | `nvidia-smi utilization.gpu` |
+| DRAM activity → `TB_moved` | Tegra `actmon` bandwidth fraction | **DCGM field 1005 `DCGM_FI_PROF_DRAM_ACTIVE`** via `dcgmi dmon` |
+
+Two device-driven changes are worth calling out:
+- **DCGM prerequisite.** The DRAM-active counter is a profiling metric read by
+  unprivileged `dcgmi` clients through a **root `nv-hostengine`** (start once with
+  `sudo nv-hostengine`). This mirrors the Jetson design, where only the DRAM
+  reader was privileged; power/util stay unprivileged.
+- **Frontier gate retuned.** These toy transformers are launch/sync-bound on a
+  V100 (far more capable than the Orin Nano), so none reach the Jetson's ≥80%
+  `utilization.gpu`. To keep the *same workloads* and the same frontier /
+  sub-frontier partition, `FRONTIER_MIN_GPU_UTIL` in `eval_power_monitor.py` is
+  retuned to the V100 utilization regime; the reproduced figures reflect V100
+  data and V100-fit constants (the constants in `detect_flops.py` are re-fit
+  here, never reused from the Jetson — as the note below already requires).
+
 The estimator:
 
 ```
@@ -29,19 +55,20 @@ re-running calibration, not reusing the numbers in `detect_flops.py`.
 
 ## Requirements
 
-- Jetson Orin Nano 8GB developer kit, JetPack 6.2 (L4T R36.5.0), in the
-  default 25W power mode. Everything is device-specific: sensor paths, debugfs
-  counters, and the calibrated constants.
-- Python 3.10 with torch 2.9.1 **from the Jetson AI Lab wheel index**
-  (standard PyPI wheels are not built for the Orin's sm_87 GPU and fail at
-  runtime). Other deps are in `requirements.txt`.
-- Root access: the monitor daemon runs as root (the actmon counters are
-  root-only debugfs), and calibration needs a NOPASSWD sudoers entry for the
-  small reader script it uses to reach those counters without running the
-  whole sweep as root.
+*(V100 port — the original Jetson requirements are in git history.)*
+
+- x86 server with an NVIDIA GPU (developed on 2× Tesla V100-SXM2-16GB),
+  Ubuntu 24.04, driver 580 / CUDA 13. The calibrated constants are device-specific
+  and are re-fit here, not reused from the Jetson.
+- Python 3.12 with a standard PyPI `torch` (the cu12x wheels include sm_70 and
+  run on the V100). Other deps are in `requirements.txt`.
+- **DCGM** (`datacenter-gpu-manager` / `dcgmi` + `nv-hostengine`) for the
+  DRAM-activity signal. Start the host engine once as root — `sudo nv-hostengine`
+  — after which the unprivileged samplers read it. Everything else (power, GPU
+  util, the monitor daemon) runs unprivileged.
 
 ```bash
-./setup.sh   # apt CUDA pieces, venv + wheels, LD_LIBRARY_PATH, sudoers entry, sanity check
+./setup.sh   # venv + PyPI wheels, DCGM host-engine check, sensor sanity check
 ```
 
 ## Reproducing the experiment
@@ -67,10 +94,11 @@ physically interpretable; it's otherwise absorbed into the fit):
 ```
 
 **2. Run the monitor against a workload.** In one shell start the daemon
-(logs to `/var/log/flop_log.db`):
+(logs to `./flop_log.db`; runs unprivileged — no sudo needed, but
+`nv-hostengine` must be up):
 
 ```bash
-sudo .venv/bin/python3 detect_flops.py
+.venv/bin/python3 detect_flops.py
 ```
 
 In another, run a sample training workload:
@@ -99,9 +127,9 @@ the daemon prints when the session ends.
 | `detect_flops.py` | the monitor daemon: sensors, workload detection, estimator, SQLite log |
 | `sample_ml_workload.py` | configurable transformer training run; prints `FlopCounterMode` ground truth |
 | `eval_power_monitor.py` | calibration sweep, constant fitting, accuracy eval |
-| `power_calibration/calibrate_power.py` | shared sampling library (power, DRAM bytes, GPU util) |
-| `power_calibration/actmon_reader.py` | root-only DRAM counter reader (via sudoers) |
-| `power_calibration/actmon_scale_bench.py` | actmon byte-scale calibration |
-| `power_calibration/power_monitor_test.py` | INA3221 sanity check |
+| `power_calibration/calibrate_power.py` | shared sampling library (nvidia-smi power/util, DCGM DRAM bytes) |
+| `power_calibration/actmon_reader.py` | Jetson-only DRAM reader (unused on V100; DCGM is read directly) |
+| `power_calibration/actmon_scale_bench.py` | DRAM byte-scale calibration |
+| `power_calibration/power_monitor_test.py` | nvidia-smi + DCGM sensor sanity check |
 | `eval_results_*_records.json` | per-run records from the report's three sweeps |
 | `writeup/` | the report (PDF), its figures, and the scripts that make them |

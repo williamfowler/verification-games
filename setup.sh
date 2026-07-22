@@ -1,47 +1,42 @@
 #!/usr/bin/env bash
 # One-time environment setup for the FLOP-estimation experiment.
-# Target: Jetson Orin Nano 8GB, JetPack 6.2 (L4T R36.5.0), Ubuntu 22.04.
+# PORTED target: x86 dual-Tesla-V100 server, Ubuntu 24.04, NVIDIA driver 580 /
+# CUDA 13 runtime. (The original targeted a Jetson Orin Nano; see git history.)
 # Safe to re-run.
 set -euo pipefail
 cd "$(dirname "$0")"
 REPO="$(pwd)"
 
-echo "== 1/5 system CUDA packages (cupti is required by torch) =="
-sudo apt-get update
-sudo apt-get install -y cuda-cupti-12-6
-
-echo "== 2/5 python venv =="
-[ -d .venv ] || python3 -m venv --system-site-packages .venv
-# python3 -m pip (not .venv/bin/pip): the pip script's shebang bakes in the
-# repo's absolute path and breaks if the repo is ever moved or renamed.
+echo "== 1/4 python venv =="
+[ -d .venv ] || python3 -m venv .venv
 PIP=".venv/bin/python3 -m pip"
 
-echo "== 3/5 python packages =="
-# torch needs the Jetson AI Lab wheel (sm_87). --no-deps on the torch/nvidia
-# installs prevents pip pulling standard PyPI nvidia-* packages that conflict
-# with the system CUDA 12.6 libraries.
-$PIP install --no-deps torch==2.9.1 --index-url https://pypi.jetson-ai-lab.io/jp6/cu126/
-$PIP install --no-deps nvidia-cudss-cu12
-$PIP install jetson-stats numpy matplotlib
+echo "== 2/4 python packages =="
+# Standard PyPI torch: the cu12x wheels bundle sm_70 kernels, so they run on the
+# V100 (no special index needed, unlike the Jetson's sm_87 wheels).
+$PIP install --upgrade pip >/dev/null
+$PIP install torch numpy matplotlib
 
-echo "== 4/5 LD_LIBRARY_PATH =="
-LDLINE="export LD_LIBRARY_PATH=$REPO/.venv/lib/python3.10/site-packages/nvidia/cu12/lib:/usr/local/cuda-12.6/targets/aarch64-linux/lib:/usr/local/cuda-12.6/lib64:\$LD_LIBRARY_PATH"
-if ! grep -qF "$LDLINE" ~/.bashrc; then
-    echo "$LDLINE" >> ~/.bashrc
-    echo "appended LD_LIBRARY_PATH export to ~/.bashrc (open a new shell or 'source ~/.bashrc')"
+echo "== 3/4 DCGM host engine (root; for the DRAM-active signal) =="
+# The DRAM-activity signal is DCGM field 1005 (DCGM_FI_PROF_DRAM_ACTIVE), read by
+# unprivileged `dcgmi` clients through a root nv-hostengine. Profiling counters
+# are admin-only (RmProfilingAdminOnly=1), so the host engine must run as root.
+if pgrep -x nv-hostengine >/dev/null; then
+    echo "nv-hostengine already running."
+elif dcgmi discovery -l >/dev/null 2>&1; then
+    echo "dcgmi can reach a host engine already."
+else
+    echo "nv-hostengine is not running. Start it as root (one time):"
+    echo "    sudo nv-hostengine"
+    echo "then re-run this script (or just the sanity checks below)."
 fi
 
-echo "== 5/5 sudoers entry for the actmon DRAM reader =="
-# eval_power_monitor.py must run unprivileged (CUDA needs the user venv) but
-# reads root-only debugfs counters through actmon_reader.py via 'sudo -n'.
-SUDOERS_FILE=/etc/sudoers.d/actmon-reader
-SUDOERS_LINE="$USER ALL=(root) NOPASSWD: $REPO/.venv/bin/python3 $REPO/power_calibration/actmon_reader.py *"
-echo "$SUDOERS_LINE" | sudo tee "$SUDOERS_FILE" > /dev/null
-sudo chmod 440 "$SUDOERS_FILE"
-sudo visudo -c -f "$SUDOERS_FILE"
-
-echo "== sanity checks =="
+echo "== 4/4 sanity checks =="
 .venv/bin/python3 -c "import torch; print('torch', torch.__version__, '| CUDA:', torch.cuda.is_available(), torch.cuda.get_arch_list())"
-.venv/bin/python3 power_calibration/power_monitor_test.py
+if pgrep -x nv-hostengine >/dev/null || dcgmi discovery -l >/dev/null 2>&1; then
+    .venv/bin/python3 power_calibration/power_monitor_test.py
+else
+    echo "(skipping sensor sanity check — start nv-hostengine first)"
+fi
 
 echo "setup complete"

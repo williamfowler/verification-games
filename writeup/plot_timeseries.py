@@ -12,15 +12,13 @@ import matplotlib.pyplot as plt
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, REPO)
-from detect_flops import ORIN_PROFILE, FALLBACK_IDLE_POWER_MW
+from detect_flops import V100_PROFILE, FALLBACK_IDLE_POWER_MW
 
-ACTMON_K = 0.0133          # measured actmon-TB per true TB (actmon_scale_bench)
-# NB: display denominator only. ORIN_PROFILE's 68 GB/s is the original Orin
-# Nano peak (2133 MHz LPDDR5) and is stale for this "Super" board, whose EMC
-# runs at 3199 MHz under load -> 102.4 GB/s. The estimator itself never uses
-# this (its byte scale is absorbed into E_PER_TB_J); only this axis does.
-TRUE_PEAK_BW = 3199e6 * 32          # 102.4 GB/s at the loaded EMC clock
-NOMINAL_PEAK_BW = ORIN_PROFILE["PEAK_BW_BYTES_S"]   # actmon-scale conversion
+# DCGM field 1005 (DRAM active) is already a fraction of peak memory bandwidth,
+# stored in timeseries.json as bytes/s = fraction * PEAK_BW. Recover the % by
+# dividing by the same peak — no actmon-scale correction needed (unlike the
+# Jetson, whose actmon counter had an unknown absolute scale).
+TRUE_PEAK_BW = V100_PROFILE["PEAK_BW_BYTES_S"]      # 900 GB/s HBM2
 
 SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
 GRID, BASE, BLUE, AQUA = "#e1e0d9", "#c3c2b7", "#2a78d6", "#1baf7a"
@@ -39,7 +37,7 @@ d = json.load(open(os.path.join(HERE, "timeseries.json")))
 pt = [t / 60 for t, _ in d["power_mw"]]
 pw = [mw / 1000 for _, mw in d["power_mw"]]
 bt = [t / 60 for t, _ in d["dram_bytes_s"]]
-bw = [b / ACTMON_K / TRUE_PEAK_BW * 100 for _, b in d["dram_bytes_s"]]
+bw = [b / TRUE_PEAK_BW * 100 for _, b in d["dram_bytes_s"]]
 t_start, t_end = d["t_start"] / 60, d["t_end"] / 60
 t_max = pt[-1]
 
@@ -64,8 +62,8 @@ ax.plot(pt, pw, color=BLUE, lw=1.4, zorder=3)
 ax.axhline(FALLBACK_IDLE_POWER_MW / 1000, color=MUTED, lw=0.9,
            ls=(0, (2, 3)), zorder=2)
 ax.text((t_start + t_end) / 2, FALLBACK_IDLE_POWER_MW / 1000 + 0.25,
-        "calibrated idle baseline (0.64 W)", ha="center", fontsize=7.5,
-        color=INK2)
+        f"calibrated idle baseline ({FALLBACK_IDLE_POWER_MW / 1000:.1f} W)",
+        ha="center", fontsize=7.5, color=INK2)
 ax.set_ylabel("Power (W)")
 ax.set_ylim(0, max(pw) * 1.18)
 session_chrome(ax, max(pw) * 1.10)

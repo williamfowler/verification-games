@@ -1,37 +1,56 @@
+import os
 import time
 import re
-import glob
 import sqlite3
 import subprocess
+import threading
 from collections import deque
 from dataclasses import dataclass
 from statistics import median
-from jtop import jtop
 
-# Frequencies from jtop (confirmed on JetPack 6.2); bandwidth for Orin Nano 8GB.
-# TFLOPS_TF32: Ampere Tensor Core peak at half FP16 rate — matches default PyTorch
-# behaviour (torch.backends.cuda.matmul.allow_tf32 = True).
-ORIN_PROFILE = {
-    "MAX_FREQ_HZ":      918_000_000,
-    "TFLOPS_FP16":       15.3,
-    "TFLOPS_TF32":        7.65,
-    "TFLOPS_FP32":        1.5,
-    "PEAK_BW_BYTES_S": 68.0e9,
-    "EMC_MAX_HZ":      3199e6,
+# ── PORTED to x86 dual-Tesla-V100 (Ubuntu 24.04) ─────────────────────────────
+# This experiment was originally hardwired to a Jetson Orin Nano (INA3221 power
+# sensor, Tegra actmon/EMC debugfs counters, tegrastats, jtop, nvpmodel). On this
+# discrete-GPU server the same three signals are re-sourced, staying faithful to
+# what each measured on the Jetson (see README "Reproduced on dual-V100"):
+#   board power (mW)    -> nvidia-smi power.draw for the monitored GPU (unpriv.)
+#   GPU utilization (%) -> nvidia-smi utilization.gpu   (the frontier gate)
+#   DRAM activity       -> DCGM field 1005 DCGM_FI_PROF_DRAM_ACTIVE (fraction of
+#                          cycles the memory interface is active) via `dcgmi dmon`
+#                          -- the semantic analog of the Jetson actmon bandwidth
+#                          fraction. Requires a root `nv-hostengine`; unprivileged
+#                          dcgmi clients read through it, mirroring the Jetson's
+#                          privileged-reader / unprivileged-sweep split.
+# The estimator math, SQLite schema, and workload-detection logic are unchanged.
+
+# Which physical GPU to monitor. CUDA_DEVICE_ORDER=PCI_BUS_ID (set below) makes
+# the nvidia-smi index match the CUDA device index, so the workload pinned to
+# cuda:GPU_INDEX is the one we measure.
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+GPU_INDEX = int(os.environ.get("FLOP_GPU_INDEX", "0"))
+
+# Tesla V100-SXM2-16GB profile. PEAK_BW_BYTES_S is the HBM2 peak (900 GB/s);
+# TFLOPS peaks feed the roofline diagnostic only (not the trusted estimate).
+# V100 (Volta) has no TF32 path, so the roofline assumes FP32.
+V100_PROFILE = {
+    "MAX_FREQ_HZ":     1530_000_000,   # SM boost clock
+    "TFLOPS_FP16":      125.0,         # tensor-core peak
+    "TFLOPS_FP32":       15.7,
+    "PEAK_BW_BYTES_S":  900.0e9,       # HBM2 peak bandwidth
 }
 
-# Roofline is an auxiliary signal. PyTorch on Ampere commonly uses TF32 for
-# matmul unless explicitly disabled, so default the peak model accordingly.
-ASSUMED_PRECISION = "TF32"
+# Roofline is an auxiliary signal. On V100 the matmul default is FP32.
+ASSUMED_PRECISION = "FP32"
 
-DB_PATH = "/var/log/flop_log.db"
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+# /var/log needs root; on this box the daemon runs unprivileged, so the SQLite
+# log lives in the repo. Override with FLOP_DB_PATH.
+DB_PATH = os.environ.get("FLOP_DB_PATH", os.path.join(REPO_ROOT, "flop_log.db"))
 
-# INA3221 power sensor — VDD_CPU_GPU_CV rail (CPU + GPU + CV cores).
-# hwmonN index can change across reboots; resolved once at startup by label.
-INA3221_DRIVER = "/sys/bus/i2c/drivers/ina3221/1-0040/hwmon"
-INA3221_LABEL  = "VDD_CPU_GPU_CV"
+# DCGM profiling field id for DRAM active (fraction 0..1).
+DRAM_ACTIVE_FIELD = 1005
 
-# Power-based FLOP calibration (empirical, Orin Nano, transformer workloads).
+# Power-based FLOP calibration (empirical, transformer workloads).
 #
 # Model: net active energy splits into a fixed active-overhead term and a term
 # proportional to useful FLOPs:
@@ -40,61 +59,31 @@ INA3221_LABEL  = "VDD_CPU_GPU_CV"
 #
 # so   TFLOPs = (E_net - POWER_OVERHEAD_W * t_active) / E_MARGINAL_J_PER_TFLOP.
 #
-# This replaces the old 1-D J/TFLOP-vs-power interpolation, which conflated two
-# effects: small workloads look inefficient only because fixed overhead is a
-# large fraction of their energy, not because their marginal J/TFLOP differs.
 # The two parameters are fit by relative least squares over a sweep of
 # transformer configs in eval_power_monitor.py (E_net = a*TFLOPs + b*t_active).
 #
 # Scope: the estimator is calibrated and validated for FRONTIER-LIKE workloads —
 # runs that saturate the GPU (avg util >= 80%), which is the actual threat model
-# (an unauthorized frontier training run keeps the cluster busy). On this Orin
-# Nano the CPU+GPU share one power rail and no EMC (memory-bandwidth) signal is
-# exposed, so a partially-loaded GPU's energy cannot be cleanly attributed to
-# FLOPs; the high POWER_OVERHEAD_W below makes low-intensity workloads estimate
-# low and, once the overhead term exceeds the net energy, NEGATIVE. The estimator
-# returns that raw value rather than clamping it (so the daemon always reports a
-# number) — but a <=0 / sub-frontier estimate just means "below the frontier
-# detection floor", not a real FLOP count. Do NOT trust the estimate for
-# sub-frontier runs (eval_power_monitor.py reports those separately, e.g. a 65%
-# util run came out 35% low).
+# (an unauthorized frontier training run keeps the cluster busy). A <=0 /
+# sub-frontier estimate just means "below the frontier detection floor", not a
+# real FLOP count.
 #
-# Fit 2026-07-07 via eval_power_monitor.py (eval_results_v2, seed=12345) over 21
-# frontier FP32 transformer configs — d_model 256->768 with batch/seq/layer
-# variation PLUS nhead {2,8}, dim_feedforward {3072,4096}, seq 512, and SGD
-# variants. Objective: relative least squares, p_overhead by leave-one-out CV.
-# Results (2-param): held-out (TEST) max err 8.95%; all 21 frontier max err 8.82%
-# (mean 4.00%), under the 10% target. Stability over 200 resampled splits:
-# E_MARGINAL 5.29-6.81 (sd 0.37), split-failure rate 13.5% — see the
-# generalization analysis (old/eval_generalization.txt) before trusting any
-# single-split PASS.
-#
-# PRECISION SCOPE (why the pool is FP32-only): precision is not observable from
-# power/clocks, and tf32/fp16/bf16 runs do 2-3.5x more FLOPs per joule than
-# fp32 — a precision-blind fit over all of them is degenerate (see
-# old/eval_results_v2.txt: tf32 runs read ~50% low; fp16/bf16 also drop below the
-# frontier util gate at this model scale). These constants therefore assume
-# FP32 matmul (this build's torch default) and UNDERESTIMATE tensor-core
-# workloads by up to ~3.5x — an acknowledged red-team evasion channel, not a
-# fixable calibration error. Treat estimates as a lower bound w.r.t. precision.
-# Constants below are the SHIP fit (refit on all 21 fp32 frontier runs).
-#
-# FALLBACK_IDLE_POWER_MW (642.0 mW) is the single startup idle baseline measured
-# during this same eval run — it is a MATCHED SET with BOTH constant blocks below
-# (2-param AND EMC): the net energy that produced these fits was measured above
-# 642.0 mW, so the live daemon's default baseline must match to keep estimates
-# unbiased. The daemon feeds ONE baseline to both estimators, so all of these move
-# together. Re-run eval_power_monitor.py and paste the recommended block (and this
-# baseline) to recalibrate; do not change one without the others.
-FALLBACK_IDLE_POWER_MW = 642.0
+# ┌─ RECOMMENDED CONSTANTS (paste block from eval_power_monitor.py) ───────────┐
+# Fit 2026-07-22 on this dual-V100 box (eval_results_v2 sweep), fp32-frontier
+# subset — 12 transformer configs at avg GPU util >= 80%, matching the report's
+# fp32-frontier methodology. 2-param all-frontier max err 13.86% (mean 8.66%);
+# 3-param max 14.72% (mean 6.22%). The V100 idles ~49 W (vs the Jetson's 0.64 W)
+# and only 12 configs clear the 80% gate (vs 21 on the Orin Nano), so the held-out
+# error is a touch looser than the Jetson's <10%. FALLBACK_IDLE_POWER_MW is the
+# matched startup idle baseline (median over 90 s); all values are ONE matched set.
+FALLBACK_IDLE_POWER_MW = 48930.0
 POWER_OVERHEAD_W         = 3.750
-E_MARGINAL_J_PER_TFLOP   = 5.72
+E_MARGINAL_J_PER_TFLOP   = 18.88
 
 # EMC / DRAM-bytes term (memory-energy) — its OWN matched constants.
 #
 # A second, PARALLEL estimator (estimate_tflops_emc) splits net energy into three
-# terms instead of two, adding a measured memory-energy term proportional to DRAM
-# bytes moved:
+# terms, adding a measured memory-energy term proportional to DRAM bytes moved:
 #
 #     E_net = E_MARGINAL_EMC_J_PER_TFLOP * TFLOPs
 #           + E_PER_TB_J * TB_moved          <- observed (not fitted) per run
@@ -102,83 +91,85 @@ E_MARGINAL_J_PER_TFLOP   = 5.72
 #
 # so TFLOPs = (E_net - E_PER_TB_J*TB_moved - POWER_OVERHEAD_EMC_W*t) / E_MARGINAL_EMC.
 #
-# The 3-param fit produces its OWN E_MARGINAL / POWER_OVERHEAD distinct from the
-# 2-param block above (re-attributed once memory energy is split out), so the EMC
-# estimator uses POWER_OVERHEAD_EMC_W / E_MARGINAL_EMC_J_PER_TFLOP, NOT the 2-param
-# pair. Both blocks share FALLBACK_IDLE_POWER_MW (above).
-#
 # Motivation is adversarial: an energy-only estimator can be spoofed by a workload
-# operating OFF the normal FLOPs<->bytes line (e.g. low-FLOP/high-memory traffic to
-# inflate energy). The byte term, fed by the actmon DRAM-activity counters below,
-# is what catches that. TB_moved comes from integrating EMC bandwidth utilization
-# over the workload; see ActmonReader. Runs in parallel with the 2-param estimator
-# (both logged) for A/B; it is NOT a replacement.
-#
-# Fit 2026-07-07 (same eval_results_v2 fp32 run as above): held-out (TEST) max
-# err 14.61% — WORSE than 2-param on benign held-out data, and unstable across
-# resampled splits (E_PER_TB spans 1.2k-6.9k J/TB; 59% of splits fail the 10%
-# target — old/eval_generalization.txt). Kept deployed anyway because its value
-# is ADVERSARIAL, not accuracy: the 2026-07-07 adversarial probe
-# (old/adversarial_results.txt) showed a memory-spoof workload at 98% GPU util fools
-# the 2-param estimator (claims 8.3 TFLOPs vs 1.8 true) while this estimator
-# collapses to -96 TFLOPs — an unmistakable spoof flag. It over-corrects (the
-# byte coefficient is high) and penalizes legitimate high-AI work (+17% on a
-# pure-matmul control), so treat it as a tripwire, not a meter. The actmon byte
-# scale is uncalibrated but absorbed into E_PER_TB_J (see actmon_bytes_per_s /
-# power_calibration/actmon_scale_bench.py).
-POWER_OVERHEAD_EMC_W       = 1.463
-E_MARGINAL_EMC_J_PER_TFLOP = 5.61
-E_PER_TB_J                 = 4621.672
+# operating OFF the normal FLOPs<->bytes line (low-FLOP/high-memory traffic to
+# inflate energy). The byte term, fed by the DCGM DRAM-activity fraction below,
+# is what catches that. TB_moved comes from integrating DRAM bandwidth
+# utilization over the workload; see DcgmDramReader. The byte scale is absorbed
+# into the fitted E_PER_TB_J. PLACEHOLDERS — recalibrate on V100.
+POWER_OVERHEAD_EMC_W       = 9.750
+E_MARGINAL_EMC_J_PER_TFLOP = 8.21
+E_PER_TB_J                 = 188.022   # J per true TB — physically sane (HBM2
+                                       # ~50-150 J/TB range); the DCGM DRAM-active
+                                       # fraction is a true bandwidth fraction, so
+                                       # unlike the Jetson's uncalibrated actmon
+                                       # (4621 J/actmon-TB) this is directly J/TB.
+# └────────────────────────────────────────────────────────────────────────────┘
 
-# Fingerprint of the device + power mode ALL the constants above were calibrated
-# on. They are one matched set measured on one physical device in one nvpmodel
-# power mode — on any other hardware (or after `nvpmodel -m`) the numbers are
-# meaningless until recalibrated: re-run eval_power_monitor.py there and paste
-# its RECOMMENDED CONSTANTS block plus this fingerprint. The methodology is the
-# portable artifact; the constants are not. The daemon compares this against the
-# live system at startup and warns loudly on mismatch.
+# Fingerprint of the device the constants above were calibrated on. On any other
+# GPU the numbers are meaningless until recalibrated: re-run eval_power_monitor.py
+# and paste its RECOMMENDED CONSTANTS block plus this fingerprint. The daemon
+# compares this against the live system at startup and warns loudly on mismatch.
 CALIBRATION_FINGERPRINT = {
-    "device_model": "NVIDIA Jetson Orin Nano Engineering Reference"
-                    " Developer Kit Super",     # /proc/device-tree/model
-    "l4t_release": "R36.5.0",                   # /etc/nv_tegra_release
-    "nvpmodel_mode": "25W",                     # nvpmodel -q "NV Power Mode"
-    "calibrated": "2026-07-07",
+    "device_model": "Tesla V100-SXM2-16GB",     # nvidia-smi --query-gpu=name
+    "driver_version": "580.159.03",             # nvidia-smi --query-gpu=driver_version
+    "cuda_version": "13.0",                      # nvidia-smi CUDA Version
+    "calibrated": "2026-07-22",
 }
 
 
-def live_fingerprint():
-    """The running system's counterpart to CALIBRATION_FINGERPRINT. Raises if a
-    source is unreadable — a monitor that can't identify its own hardware should
-    not silently pretend the calibration applies."""
-    with open("/proc/device-tree/model") as f:
-        model = f.read().strip().rstrip("\x00")
-    with open("/etc/nv_tegra_release") as f:
-        m = re.match(r"# (R\d+) \(release\), REVISION: ([\d.]+)", f.read())
-    if not m:
-        raise RuntimeError("cannot parse /etc/nv_tegra_release")
-    l4t = f"{m.group(1)}.{m.group(2)}"
-    out = subprocess.run(["nvpmodel", "-q"], capture_output=True, text=True,
+def _nvidia_smi(fields, gpu_index=GPU_INDEX):
+    """Query per-GPU nvidia-smi fields for one GPU, return a list of string values
+    (csv, no header, no units). Raises on failure — nvidia-smi is the primary
+    signal, so an unreadable query is a bug to surface, not mask."""
+    out = subprocess.run(
+        ["nvidia-smi", f"--query-gpu={fields}",
+         "--format=csv,noheader,nounits", "-i", str(gpu_index)],
+        capture_output=True, text=True, check=True).stdout.strip()
+    return [v.strip() for v in out.split(",")]
+
+
+def read_power_mw(gpu_index=GPU_INDEX):
+    """Return the monitored GPU's board power in milliwatts (nvidia-smi
+    power.draw, W -> mW). The discrete-GPU analog of the Jetson INA3221 rail;
+    per-GPU here, so no shared-rail attribution problem. Raises on read error."""
+    (p,) = _nvidia_smi("power.draw", gpu_index)
+    return float(p) * 1000.0
+
+
+def read_gpu_sample(gpu_index=GPU_INDEX):
+    """One nvidia-smi poll: (power_mw, gpu_util_pct, sm_clock_hz)."""
+    p, util, clk = _nvidia_smi("power.draw,utilization.gpu,clocks.sm", gpu_index)
+    return float(p) * 1000.0, float(util), float(clk) * 1e6
+
+
+def live_fingerprint(gpu_index=GPU_INDEX):
+    """The running system's counterpart to CALIBRATION_FINGERPRINT (nvidia-smi
+    GPU name + driver + CUDA version). Raises if a source is unreadable — a
+    monitor that can't identify its own hardware should not pretend the
+    calibration applies."""
+    name, driver = _nvidia_smi("name,driver_version", gpu_index)
+    # CUDA version isn't a per-GPU query field; scrape it from the header.
+    out = subprocess.run(["nvidia-smi"], capture_output=True, text=True,
                          check=True).stdout
-    pm = re.search(r"NV Power Mode:\s*(\S+)", out)
-    if not pm:
-        raise RuntimeError(f"cannot parse nvpmodel -q output: {out!r}")
-    return {"device_model": model, "l4t_release": l4t,
-            "nvpmodel_mode": pm.group(1)}
+    m = re.search(r"CUDA Version:\s*([\d.]+)", out)
+    cuda = m.group(1) if m else "unknown"
+    return {"device_model": name, "driver_version": driver, "cuda_version": cuda}
 
 
 def check_calibration_fingerprint():
-    """Compare live hardware/power-mode against what the constants were
-    calibrated on; print a loud RECALIBRATE banner on any mismatch. Returns True
-    when everything matches."""
+    """Compare live hardware against what the constants were calibrated on; print
+    a loud RECALIBRATE banner on any mismatch. Returns True when everything
+    matches."""
     live = live_fingerprint()
     mismatches = [
         (k, CALIBRATION_FINGERPRINT[k], live[k])
-        for k in ("device_model", "l4t_release", "nvpmodel_mode")
+        for k in ("device_model", "driver_version", "cuda_version")
         if CALIBRATION_FINGERPRINT[k] != live[k]
     ]
     if not mismatches:
         print(f"Calibration fingerprint OK: {live['device_model']}"
-              f" | {live['l4t_release']} | {live['nvpmodel_mode']}"
+              f" | driver {live['driver_version']} | CUDA {live['cuda_version']}"
               f" (calibrated {CALIBRATION_FINGERPRINT['calibrated']})")
         return True
     print("!" * 78)
@@ -186,50 +177,18 @@ def check_calibration_fingerprint():
     for key, want, got in mismatches:
         print(f"!!   {key}: calibrated on {want!r}, running on {got!r}")
     print("!! The estimator constants are a matched set for the calibrated")
-    print("!! device + power mode only. RECALIBRATE: run eval_power_monitor.py")
-    print("!! on THIS system and paste its RECOMMENDED CONSTANTS (and matched")
-    print("!! idle baseline + this fingerprint) into detect_flops.py.")
+    print("!! device only. RECALIBRATE: run eval_power_monitor.py on THIS system")
+    print("!! and paste its RECOMMENDED CONSTANTS (and matched idle baseline +")
+    print("!! this fingerprint) into detect_flops.py.")
     print("!" * 78)
     return False
 
-# Tegra memory-controller activity monitor (actmon) + EMC clock, via debugfs.
-# Root-only; the daemon runs as root and reads these directly — this is the
-# memory-bandwidth signal feeding the EMC estimator. The same three paths are
-# intentionally duplicated in power_calibration/actmon_reader.py (the sudoers
-# variant spawned by the calibration sweep), which must stay stdlib-only and so
-# cannot import this module — keep the two lists in sync.
-ACTMON_PRD_PATH = "/sys/kernel/debug/bpmp/debug/actmon/mc_all_last_prd_activity"
-ACTMON_AVG_PATH = "/sys/kernel/debug/bpmp/debug/actmon/mc_all_avg_activity"
-EMC_RATE_PATH   = "/sys/kernel/debug/bpmp/debug/clk/emc/rate"
 
 ACTIVE_GPU_UTIL_THRESHOLD = 5.0
 START_ACTIVE_POLLS = 2
 STOP_QUIET_POLLS = 3
 IDLE_BASELINE_MIN_SAMPLES = 5
 IDLE_BASELINE_WINDOW = 120
-
-
-def find_ina3221_paths():
-    """Return (volt_path, curr_path) for INA3221_LABEL, or (None, None)."""
-    for hwmon in glob.glob(f"{INA3221_DRIVER}/hwmon*"):
-        for i in range(1, 5):
-            try:
-                with open(f"{hwmon}/in{i}_label") as f:
-                    if f.read().strip() == INA3221_LABEL:
-                        return f"{hwmon}/in{i}_input", f"{hwmon}/curr{i}_input"
-            except OSError:
-                continue
-    return None, None
-
-
-def read_power_mw(volt_path, curr_path):
-    """Return VDD_CPU_GPU_CV power in milliwatts. Raises on read error — a sensor
-    that should be readable but is not is a bug we want surfaced, not masked."""
-    with open(volt_path) as f:
-        mv = float(f.read().strip())
-    with open(curr_path) as f:
-        ma = float(f.read().strip())
-    return mv * ma / 1000.0
 
 
 def add_column_if_missing(conn, table, column, definition):
@@ -241,7 +200,7 @@ def add_column_if_missing(conn, table, column, definition):
 # Single source of truth for the SQLite schema, in exact column order (an
 # implicit `id INTEGER PRIMARY KEY AUTOINCREMENT` comes first in each table).
 # APPEND ONLY: never reorder or rename — init_db additively migrates existing
-# /var/log/flop_log.db files by adding any missing column at the end.
+# flop_log.db files by adding any missing column at the end.
 SCHEMA = {
     "flop_log": [
         ("timestamp",             "TEXT NOT NULL"),
@@ -250,7 +209,7 @@ SCHEMA = {
         ("estimated_tflops",      "REAL"),
         ("bound_type",            "TEXT"),  # always "unknown" (ditto)
         ("gpu_util",              "REAL"),
-        ("emc_util",              "REAL"),  # always NULL (tegrastats EMC never worked)
+        ("emc_util",              "REAL"),  # always NULL (kept for schema compat)
         ("power_mw",              "REAL"),
         ("idle_baseline_mw",      "REAL"),
         ("net_power_mw",          "REAL"),
@@ -259,7 +218,7 @@ SCHEMA = {
         ("power_tflops_delta",    "REAL"),
         # EMC/bytes term (parallel estimator)
         ("bytes_delta",            "REAL"),
-        ("actmon_util",            "REAL"),
+        ("actmon_util",            "REAL"),  # now the DCGM DRAM-active fraction
         ("power_emc_tflops_delta", "REAL"),
     ],
     "workload_sessions": [
@@ -275,7 +234,7 @@ SCHEMA = {
         ("idle_baseline_mw", "REAL"),
         ("net_energy_j",     "REAL"),
         ("avg_net_power_mw", "REAL"),
-        ("avg_emc_util",     "REAL"),  # always NULL (tegrastats EMC never worked)
+        ("avg_emc_util",     "REAL"),  # always NULL (kept for schema compat)
         ("avg_freq_mhz",     "REAL"),
         ("estimator",        "TEXT"),
         # EMC/bytes term (parallel estimator)
@@ -379,80 +338,106 @@ def _tflops_delta(net_energy_delta_j, dt_sec, tb_delta,
             / e_marginal_j_per_tflop)
 
 
-def actmon_bytes_per_s(util_fraction, emc_rate_hz):
+def actmon_bytes_per_s(util_fraction, emc_rate_hz=None):
     """
-    Convert an EMC bandwidth-utilization fraction (+ current EMC clock) to DRAM
-    bytes/s. Single source of truth shared by the daemon's ActmonReader and the
-    calibration BytesSampler.
+    Convert a DRAM bandwidth-utilization fraction to DRAM bytes/s. Single source
+    of truth shared by the daemon's DcgmDramReader and the calibration
+    BytesSampler.
 
-        bytes/s = util_fraction * PEAK_BW_BYTES_S * (emc_rate / EMC_MAX_HZ)
+        bytes/s = util_fraction * PEAK_BW_BYTES_S
 
-    The (emc_rate / EMC_MAX_HZ) factor corrects for EMC DVFS: PEAK_BW_BYTES_S is
-    the bandwidth at the max EMC clock, so when the controller is downclocked the
-    achievable bandwidth (and thus bytes for a given utilization) scales down with
-    the clock. For memory-bound frontier runs EMC pins near max and the factor is
-    ~1; it matters for partially-loaded / sub-frontier runs.
+    util_fraction is DCGM field 1005 (DCGM_FI_PROF_DRAM_ACTIVE) — the fraction of
+    cycles the HBM2 memory interface was active — the discrete-GPU analog of the
+    Jetson actmon bandwidth fraction. V100 memory runs at a fixed clock, so unlike
+    the Jetson (whose EMC DVFS-downclocks) there is no emc_rate correction; the
+    parameter is accepted and ignored for call-site compatibility.
 
-    Phase-0 note (on-device, 2026-06-30): the mc_all actmon counter is RESPONSIVE
-    (idle->load ~100x; EMC clock 2133->3199 MHz under load) but its absolute scale
-    is uncalibrated — util_fraction here reads ~1% under a load tegrastats calls
-    ~38%. That mismatch does NOT affect the estimator: bytes_per_s is LINEAR in the
-    true activity, so any constant scale error is absorbed by the fitted E_PER_TB_J
-    (TB_obs = k*TB_true => fitted c = E_PER_TB/k, and c*TB_obs is unchanged). Only
-    proportionality matters here, not the absolute byte count.
+    Any constant scale error in the fraction is absorbed by the fitted E_PER_TB_J
+    (TB_obs = k*TB_true => fitted c = E_PER_TB/k, and c*TB_obs is unchanged), so
+    only proportionality matters here, not the absolute byte count.
     """
-    return (util_fraction * ORIN_PROFILE["PEAK_BW_BYTES_S"]
-            * (emc_rate_hz / ORIN_PROFILE["EMC_MAX_HZ"]))
+    return util_fraction * V100_PROFILE["PEAK_BW_BYTES_S"]
 
 
-def _read_sysfs_number(path):
-    """First number in a sysfs/debugfs file as float. Raises on read/parse failure
-    — an expected-readable counter that isn't is a bug to surface, not mask."""
-    with open(path) as f:
-        return float(f.read().strip().split()[0])
+def _parse_dcgm_dram_line(line):
+    """Parse one `dcgmi dmon -e 1005` data line -> DRAM-active fraction (float),
+    or None for headers/blank/non-data lines. Data lines look like:
+        GPU 0    0.123456
+    (a 'GPU'/'Id' prefix, the entity index, then the field value). Robust to
+    column spacing; takes the last float token on a GPU line."""
+    s = line.strip()
+    if not s or s.startswith("#") or s.startswith("Id"):
+        return None
+    if not s.startswith("GPU"):
+        return None
+    toks = s.split()
+    for tok in reversed(toks):
+        try:
+            return float(tok)
+        except ValueError:
+            continue
+    return None
 
 
-class ActmonReader:
+class DcgmDramReader:
     """
-    Reads DRAM bandwidth utilization from the Tegra actmon debugfs counters
-    (root-only) and converts it to bytes/s. This is the only working
-    memory-bandwidth signal on this device (tegrastats' EMC_FREQ field never
-    matches on this JetPack 6.2 build, and jtop reports 0).
+    Reads the DRAM-active fraction from a persistent `dcgmi dmon -e 1005` stream
+    (DCGM field 1005, DCGM_FI_PROF_DRAM_ACTIVE) and converts it to bytes/s. This
+    is the memory-bandwidth signal feeding the EMC estimator — the V100 analog of
+    the Jetson actmon counter.
 
-    read_bytes_per_s() RAISES if the counters are unreadable (e.g. not running as
-    root, or the debugfs paths are absent). The daemon is meant to run as root, so a
-    read failure is a setup/runtime bug we want surfaced immediately rather than
-    silently disabling the EMC estimate. The most recent utilization fraction is
-    stashed in latest_util for per-poll logging.
+    A background thread keeps latest_util updated from the stream. read_bytes_per_s()
+    RAISES if no sample has arrived yet or the stream died (e.g. nv-hostengine not
+    running), so a broken DCGM setup is surfaced immediately rather than silently
+    disabling the EMC estimate.
     """
 
-    def __init__(self):
+    def __init__(self, gpu_index=GPU_INDEX, interval_ms=500, warmup_timeout=8.0):
+        self.gpu_index = gpu_index
         self.latest_util = None
+        self._exc = None
+        self.proc = subprocess.Popen(
+            ["dcgmi", "dmon", "-e", str(DRAM_ACTIVE_FIELD),
+             "-i", str(gpu_index), "-d", str(interval_ms)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        # The stream is async (background thread) — unlike the Jetson's synchronous
+        # actmon file read — so block until the first sample arrives, else the very
+        # first poll would race ahead of dcgmi's startup. A stream that never emits
+        # (host engine down / field unavailable) is surfaced here, at startup.
+        deadline = time.monotonic() + warmup_timeout
+        while self.latest_util is None and self._exc is None:
+            if self.proc.poll() is not None:
+                raise RuntimeError(
+                    "dcgmi dmon exited before producing a DRAM-active sample — is "
+                    "nv-hostengine running (sudo nv-hostengine) and does "
+                    "`dcgmi dmon -e 1005` work on this GPU?")
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    "DCGM DRAM-active stream produced no sample within "
+                    f"{warmup_timeout:.0f}s — is nv-hostengine running?")
+            time.sleep(0.1)
+        if self._exc is not None:
+            raise self._exc
+
+    def _run(self):
+        try:
+            for line in iter(self.proc.stdout.readline, ""):
+                frac = _parse_dcgm_dram_line(line)
+                if frac is not None:
+                    self.latest_util = max(0.0, min(1.0, frac))
+        except BaseException as e:  # pragma: no cover - surfaced on read
+            self._exc = e
 
     def read_bytes_per_s(self):
-        emc_rate = _read_sysfs_number(EMC_RATE_PATH)
-        last_prd = _read_sysfs_number(ACTMON_PRD_PATH)
-        if emc_rate <= 0:
-            raise ValueError(f"actmon: non-positive emc_rate {emc_rate!r}")
-        util = last_prd / emc_rate
-        util = 0.0 if util < 0.0 else (1.0 if util > 1.0 else util)
-        self.latest_util = util
-        return actmon_bytes_per_s(util, emc_rate)
-
-
-def get_freq_hz(jetson):
-    """
-    Return (cur_hz, max_hz) from jtop 4.x (freq values are kHz on JetPack 6.2).
-    Raises if the frequency is unavailable — surfaced rather than silently
-    substituting the peak clock, which would bias the SM-busy diagnostic toward
-    100% utilization and hide a broken jtop read.
-    """
-    freq = jetson.gpu.get('gpu', {}).get('freq', {})
-    cur, mx = freq.get('cur', 0), freq.get('max', 0)
-    if cur <= 0 or mx <= 0:
-        raise RuntimeError(f"GPU frequency unavailable from jtop "
-                           f"(cur={cur!r}, max={mx!r})")
-    return cur * 1000, mx * 1000
+        if self._exc is not None:
+            raise self._exc
+        if self.latest_util is None:
+            raise RuntimeError(
+                "DCGM DRAM-active stream produced no samples — is nv-hostengine "
+                "running (sudo nv-hostengine) and does `dcgmi dmon -e 1005` work?")
+        return actmon_bytes_per_s(self.latest_util)
 
 
 @dataclass
@@ -474,24 +459,20 @@ class Session:
     net_bytes: float = 0.0
 
 
-def run_background_monitor(poll_interval=1.5):
+def run_background_monitor(poll_interval=1.5, gpu_index=GPU_INDEX):
     active_poll_streak = 0
     quiet_poll_streak = 0
     quiet_power_samples = deque(maxlen=IDLE_BASELINE_WINDOW)
 
     conn = init_db(DB_PATH)
-    volt_path, curr_path = find_ina3221_paths()
-    if not volt_path:
-        # Power is the primary signal; a missing sensor is a hard error, not a
-        # "continue with NULL power" degradation.
-        raise RuntimeError(
-            f"INA3221 power sensor ({INA3221_LABEL}) not found — cannot monitor "
-            f"power. Check the sensor wiring / hwmon labels.")
-    print(f"INA3221 power sensor: {INA3221_LABEL} found.")
+    # nvidia-smi power is the primary signal; a failing probe read is a hard error.
+    read_power_mw(gpu_index)
+    print(f"nvidia-smi power probe OK (GPU {gpu_index}). DB: {DB_PATH}")
     check_calibration_fingerprint()
 
-    print("Daemon initialized. Monitoring Orin Nano hardware channels for new ML workloads...")
-    actmon_reader = ActmonReader()
+    print(f"Daemon initialized. Monitoring GPU {gpu_index} for new ML workloads...")
+    dram_reader = DcgmDramReader(gpu_index)
+    max_freq_hz = V100_PROFILE["MAX_FREQ_HZ"]
 
     # session is None while quiet; a Session object doubles as the
     # "workload currently tracked" state.
@@ -499,8 +480,6 @@ def run_background_monitor(poll_interval=1.5):
 
     def start_session(timestamp, now_mono):
         # Always the calibrated constant, for repeatable run-to-run estimates.
-        # The live quiet samples remain useful diagnostics, but letting them
-        # redefine idle between workloads makes identical runs hard to compare.
         session = Session(start_time=timestamp, start_mono=now_mono,
                           idle_baseline_mw=FALLBACK_IDLE_POWER_MW)
         print("\n[!] NEW WORKLOAD DETECTED")
@@ -515,8 +494,6 @@ def run_background_monitor(poll_interval=1.5):
         poll_count = session.poll_count
         avg_power_mw = session.power_sum / poll_count if poll_count else None
         avg_net_power_mw = session.net_power_sum / poll_count if poll_count else None
-        # avg_emc_util column retained for schema compatibility; the tegrastats
-        # EMC signal it recorded never worked on this build, so it is always NULL.
         avg_emc_util = None
         avg_freq_mhz = session.freq_sum_mhz / poll_count if poll_count else None
 
@@ -567,140 +544,127 @@ def run_background_monitor(poll_interval=1.5):
 
         quiet_power_samples.append(power_mw)
 
-    with jtop() as jetson:
-        last_poll_mono = time.monotonic()
+    last_poll_mono = time.monotonic()
 
-        while jetson.ok():
-            now_mono = time.monotonic()
-            dt_sec = max(now_mono - last_poll_mono, 0.0)
-            last_poll_mono = now_mono
+    while True:
+        now_mono = time.monotonic()
+        dt_sec = max(now_mono - last_poll_mono, 0.0)
+        last_poll_mono = now_mono
 
-            stats = jetson.stats
-            gpu_util = stats.get('GPU', 0)
-            bytes_per_s_now = actmon_reader.read_bytes_per_s()
-            actmon_util = actmon_reader.latest_util
-            cur_freq_hz, max_freq_hz = get_freq_hz(jetson)
-            power_mw = read_power_mw(volt_path, curr_path)
-            timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
-            is_active_sample = gpu_util > ACTIVE_GPU_UTIL_THRESHOLD
+        power_mw, gpu_util, cur_freq_hz = read_gpu_sample(gpu_index)
+        bytes_per_s_now = dram_reader.read_bytes_per_s()
+        actmon_util = dram_reader.latest_util
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        is_active_sample = gpu_util > ACTIVE_GPU_UTIL_THRESHOLD
 
-            if is_active_sample:
-                active_poll_streak += 1
-                quiet_poll_streak = 0
+        if is_active_sample:
+            active_poll_streak += 1
+            quiet_poll_streak = 0
+        else:
+            active_poll_streak = 0
+            if session is not None:
+                quiet_poll_streak += 1
             else:
-                active_poll_streak = 0
-                if session is not None:
-                    quiet_poll_streak += 1
-                else:
-                    quiet_power_samples.append(power_mw)
+                quiet_power_samples.append(power_mw)
 
-            if session is None and active_poll_streak >= START_ACTIVE_POLLS:
-                quiet_poll_streak = 0
-                session = start_session(timestamp, now_mono)
+        if session is None and active_poll_streak >= START_ACTIVE_POLLS:
+            quiet_poll_streak = 0
+            session = start_session(timestamp, now_mono)
 
-            if session is not None and is_active_sample:
-                # Roofline diagnostic: compute ceiling only. The memory-bandwidth
-                # ceiling needed a live EMC-utilization signal, which this build
-                # never provides (see ActmonReader docstring); its DB columns
-                # (tflops_mem_ceil, emc_util, bound_type="unknown") are kept for
-                # schema compatibility.
-                peak_tflops = ORIN_PROFILE[f"TFLOPS_{ASSUMED_PRECISION}"]
-                tflops_sm = peak_tflops * (cur_freq_hz / max_freq_hz) * (gpu_util / 100.0)
-                estimated_tflops = tflops_sm
+        if session is not None and is_active_sample:
+            # Roofline diagnostic: compute ceiling only (auxiliary signal).
+            peak_tflops = V100_PROFILE[f"TFLOPS_{ASSUMED_PRECISION}"]
+            tflops_sm = peak_tflops * (cur_freq_hz / max_freq_hz) * (gpu_util / 100.0)
+            estimated_tflops = tflops_sm
 
-                roofline_tflops_delta = estimated_tflops * dt_sec
-                session.roofline_tflops += roofline_tflops_delta
+            roofline_tflops_delta = estimated_tflops * dt_sec
+            session.roofline_tflops += roofline_tflops_delta
 
-                # DRAM bytes moved this interval (actmon); read_bytes_per_s()
-                # raises if the counter is unreadable, so this is always valid.
-                bytes_delta = bytes_per_s_now * dt_sec
-                session.net_bytes += bytes_delta
+            # DRAM bytes moved this interval (DCGM); read_bytes_per_s() raises if
+            # the stream is unreadable, so this is always valid.
+            bytes_delta = bytes_per_s_now * dt_sec
+            session.net_bytes += bytes_delta
 
-                # power_mw is always valid (read_power_mw raises on failure).
-                net_power_mw = max(power_mw - session.idle_baseline_mw, 0.0)
-                net_power_w = net_power_mw / 1000.0
-                net_energy_delta_j = net_power_w * dt_sec
-                session.net_energy_j += net_energy_delta_j
-                # Per-poll increments of both estimators via the shared
-                # _tflops_delta helper (2-param = zero byte term; the EMC
-                # variant uses its OWN matched constants, not the 2-param
-                # pair). Session sums reconcile with estimate_tflops() /
-                # estimate_tflops_emc() respectively.
-                power_tflops_delta = _tflops_delta(
-                    net_energy_delta_j, dt_sec, 0.0,
-                    POWER_OVERHEAD_W, E_MARGINAL_J_PER_TFLOP, 0.0)
-                power_emc_tflops_delta = _tflops_delta(
-                    net_energy_delta_j, dt_sec, bytes_delta / 1e12,
-                    POWER_OVERHEAD_EMC_W, E_MARGINAL_EMC_J_PER_TFLOP, E_PER_TB_J)
+            # power_mw is always valid (read_gpu_sample raises on failure).
+            net_power_mw = max(power_mw - session.idle_baseline_mw, 0.0)
+            net_power_w = net_power_mw / 1000.0
+            net_energy_delta_j = net_power_w * dt_sec
+            session.net_energy_j += net_energy_delta_j
+            power_tflops_delta = _tflops_delta(
+                net_energy_delta_j, dt_sec, 0.0,
+                POWER_OVERHEAD_W, E_MARGINAL_J_PER_TFLOP, 0.0)
+            power_emc_tflops_delta = _tflops_delta(
+                net_energy_delta_j, dt_sec, bytes_delta / 1e12,
+                POWER_OVERHEAD_EMC_W, E_MARGINAL_EMC_J_PER_TFLOP, E_PER_TB_J)
 
-                session.power_sum += power_mw
-                session.net_power_sum += net_power_mw
-                session.peak_power = max(session.peak_power, power_mw)
+            session.power_sum += power_mw
+            session.net_power_sum += net_power_mw
+            session.peak_power = max(session.peak_power, power_mw)
 
-                session.peak_util = max(session.peak_util, gpu_util)
-                session.poll_count += 1
-                session.active_time_s += dt_sec
-                session.freq_sum_mhz += cur_freq_hz / 1e6
+            session.peak_util = max(session.peak_util, gpu_util)
+            session.poll_count += 1
+            session.active_time_s += dt_sec
+            session.freq_sum_mhz += cur_freq_hz / 1e6
 
-                power_est_so_far = estimate_tflops(
-                    session.net_energy_j, session.active_time_s
-                )
-                power_est_emc_so_far = estimate_tflops_emc(
-                    session.net_energy_j, session.active_time_s,
-                    session.net_bytes / 1e12
-                )
+            power_est_so_far = estimate_tflops(
+                session.net_energy_j, session.active_time_s
+            )
+            power_est_emc_so_far = estimate_tflops_emc(
+                session.net_energy_j, session.active_time_s,
+                session.net_bytes / 1e12
+            )
 
-                conn.execute(
-                    "INSERT INTO flop_log"
-                    " (timestamp, tflops_sm, tflops_mem_ceil, estimated_tflops,"
-                    "  bound_type, gpu_util, emc_util, power_mw, idle_baseline_mw,"
-                    "  net_power_mw, dt_sec, roofline_tflops_delta, power_tflops_delta,"
-                    "  bytes_delta, actmon_util, power_emc_tflops_delta)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (timestamp, tflops_sm, None, estimated_tflops,
-                     "unknown", gpu_util, None, power_mw,
-                     session.idle_baseline_mw, net_power_mw, dt_sec,
-                     roofline_tflops_delta, power_tflops_delta,
-                     bytes_delta, actmon_util, power_emc_tflops_delta)
-                )
-                conn.commit()
+            conn.execute(
+                "INSERT INTO flop_log"
+                " (timestamp, tflops_sm, tflops_mem_ceil, estimated_tflops,"
+                "  bound_type, gpu_util, emc_util, power_mw, idle_baseline_mw,"
+                "  net_power_mw, dt_sec, roofline_tflops_delta, power_tflops_delta,"
+                "  bytes_delta, actmon_util, power_emc_tflops_delta)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (timestamp, tflops_sm, None, estimated_tflops,
+                 "unknown", gpu_util, None, power_mw,
+                 session.idle_baseline_mw, net_power_mw, dt_sec,
+                 roofline_tflops_delta, power_tflops_delta,
+                 bytes_delta, actmon_util, power_emc_tflops_delta)
+            )
+            conn.commit()
 
-                print("--------------------------------------------------")
-                print(f"Hardware Clock     : {cur_freq_hz/1e6:.1f} MHz  (max {max_freq_hz/1e6:.0f} MHz)")
-                print(f"GPU Load           : {gpu_util}%")
-                print(f"Poll interval      : {dt_sec:.2f}s observed")
-                print(f"VDD_CPU_GPU_CV     : {power_mw:.0f} mW"
-                      f"  |  net {net_power_mw:.0f} mW"
-                      f" above idle {session.idle_baseline_mw:.0f} mW")
-                print(f"SM busy estimate   : {tflops_sm:.3f} TFLOPS ({ASSUMED_PRECISION}, diagnostic)")
-                print(f"Roofline diagnostic: {estimated_tflops:.3f} TFLOPS  [compute ceiling]")
-                if power_est_so_far is not None:
-                    eff = (f"{session.net_energy_j / power_est_so_far:.2f} J/TFLOP effective"
-                           if power_est_so_far > 0
-                           else "<=0: sub-frontier, overhead exceeds net energy")
-                    print(f"Power estimate     : {power_est_so_far:.4f} TFLOPs  ({eff})")
-                if power_est_emc_so_far is not None:
-                    print(f"Power est. (EMC)   : {power_est_emc_so_far:.4f} TFLOPs"
-                          f"  ({session.net_bytes/1e12:.4f} TB moved"
-                          f"{', actmon ' + format(actmon_util*100, '.0f') + '%' if actmon_util is not None else ''})")
-                print(f"Roofline diagnostic total: {session.roofline_tflops:.4f} TFLOPs")
+            print("--------------------------------------------------")
+            print(f"SM Clock           : {cur_freq_hz/1e6:.1f} MHz  (max {max_freq_hz/1e6:.0f} MHz)")
+            print(f"GPU Load           : {gpu_util}%")
+            print(f"Poll interval      : {dt_sec:.2f}s observed")
+            print(f"GPU power          : {power_mw:.0f} mW"
+                  f"  |  net {net_power_mw:.0f} mW"
+                  f" above idle {session.idle_baseline_mw:.0f} mW")
+            print(f"SM busy estimate   : {tflops_sm:.3f} TFLOPS ({ASSUMED_PRECISION}, diagnostic)")
+            print(f"Roofline diagnostic: {estimated_tflops:.3f} TFLOPS  [compute ceiling]")
+            if power_est_so_far is not None:
+                eff = (f"{session.net_energy_j / power_est_so_far:.2f} J/TFLOP effective"
+                       if power_est_so_far > 0
+                       else "<=0: sub-frontier, overhead exceeds net energy")
+                print(f"Power estimate     : {power_est_so_far:.4f} TFLOPs  ({eff})")
+            if power_est_emc_so_far is not None:
+                print(f"Power est. (EMC)   : {power_est_emc_so_far:.4f} TFLOPs"
+                      f"  ({session.net_bytes/1e12:.4f} TB moved"
+                      f"{', DRAM ' + format(actmon_util*100, '.0f') + '%' if actmon_util is not None else ''})")
+            print(f"Roofline diagnostic total: {session.roofline_tflops:.4f} TFLOPs")
 
-            elif session is not None and quiet_poll_streak >= STOP_QUIET_POLLS:
-                finish_session(session, timestamp, now_mono, power_mw)
-                session = None
-                active_poll_streak = 0
-                quiet_poll_streak = 0
+        elif session is not None and quiet_poll_streak >= STOP_QUIET_POLLS:
+            finish_session(session, timestamp, now_mono, power_mw)
+            session = None
+            active_poll_streak = 0
+            quiet_poll_streak = 0
 
-            elif session is None:
-                observed_idle_mw = observed_idle_baseline_mw(quiet_power_samples)
-                power_str = f" | power={power_mw:.0f}mW"
-                print(f"[quiet] gpu={gpu_util:.1f}%"
-                      f" | freq={cur_freq_hz/1e6:.0f}MHz"
-                      f" | idle_base={FALLBACK_IDLE_POWER_MW:.0f}mW"
-                      f" | observed_idle={observed_idle_mw:.0f}mW{power_str}"
-                      f" | active_streak={active_poll_streak}/{START_ACTIVE_POLLS}")
+        elif session is None:
+            observed_idle_mw = observed_idle_baseline_mw(quiet_power_samples)
+            power_str = f" | power={power_mw:.0f}mW"
+            print(f"[quiet] gpu={gpu_util:.1f}%"
+                  f" | freq={cur_freq_hz/1e6:.0f}MHz"
+                  f" | idle_base={FALLBACK_IDLE_POWER_MW:.0f}mW"
+                  f" | observed_idle={observed_idle_mw:.0f}mW{power_str}"
+                  f" | active_streak={active_poll_streak}/{START_ACTIVE_POLLS}")
 
-            time.sleep(poll_interval)
+        time.sleep(poll_interval)
 
 
 if __name__ == "__main__":

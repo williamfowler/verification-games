@@ -2,22 +2,25 @@
 """
 calibrate_power.py — sampling library for the calibration/eval tooling.
 
-Provides the shared measurement plumbing: INA3221 power sampling
-(PowerSampler), DRAM-bytes sampling via the privileged actmon reader
-(BytesSampler), tegrastats GPU-utilization scraping, idle-baseline sampling
-(sample_idle), and the instrumented workload runner (run_workload) that
-integrates net energy against FlopCounterMode ground truth.
+Provides the shared measurement plumbing: GPU power sampling via nvidia-smi
+(PowerSampler), DRAM-bytes sampling via the DCGM DRAM-active counter
+(BytesSampler), idle-baseline sampling (sample_idle), and the instrumented
+workload runner (run_workload) that integrates net energy against
+FlopCounterMode ground truth.
+
+PORTED from the Jetson Orin Nano (INA3221 + tegrastats + actmon) to an x86
+dual-Tesla-V100 box: power/util now come from nvidia-smi (unprivileged) and DRAM
+activity from DCGM field 1005 via `dcgmi dmon` (needs a root nv-hostengine, but
+the dcgmi client stays unprivileged). See detect_flops.py for the signal map.
 
 Not a standalone tool: the calibration/accuracy entry point is
 eval_power_monitor.py (which fits the active-energy models and prints the
 RECOMMENDED CONSTANTS block for detect_flops.py). Other consumers:
-actmon_scale_bench.py and writeup/capture_timeseries.py. The legacy standalone
-calibrator this module grew out of produced old/power_calibration.txt.
+actmon_scale_bench.py and writeup/capture_timeseries.py.
 """
 
 import os
 import re
-import select
 import subprocess
 import sys
 import threading
@@ -25,21 +28,20 @@ import time
 from statistics import mean, median, stdev
 
 # ── Sampling ──────────────────────────────────────────────────────────────────
-POLL_S = 0.5   # INA3221 sample interval (2 Hz)
+POLL_S = 0.5   # nvidia-smi / DCGM sample interval (2 Hz)
 
 # This file lives in power_calibration/; the workload script and the venv are at
 # the repo root one level up.
 REPO_ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKLOAD_SCRIPT = os.path.join(REPO_ROOT, "sample_ml_workload.py")
 
-# ── INA3221 sensor ────────────────────────────────────────────────────────────
-# Canonical INA3221 constants/helpers live in detect_flops.py; re-exported here
-# so the eval/probe/drift scripts keep importing them from calibrate_power.
+# Canonical hardware primitives live in detect_flops.py; re-exported here so the
+# eval/probe/bench scripts keep importing them from calibrate_power.
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 from detect_flops import (  # noqa: E402
-    INA3221_DRIVER, INA3221_LABEL, actmon_bytes_per_s, find_ina3221_paths,
-    read_power_mw,
+    GPU_INDEX, DRAM_ACTIVE_FIELD, V100_PROFILE, actmon_bytes_per_s,
+    read_gpu_sample, read_power_mw, _parse_dcgm_dram_line,
 )
 
 
@@ -47,9 +49,8 @@ from detect_flops import (  # noqa: E402
 
 def find_venv_python():
     """
-    Prefer the .venv Python over sys.executable. When the script is invoked via
-    sudo, sys.executable is the system Python which lacks the bundled CUDA libs
-    that the venv torch ships with.
+    Prefer the .venv Python over sys.executable, so the launched workload has the
+    CUDA-enabled torch from the venv regardless of how this script was invoked.
     """
     for name in ("python3", "python"):
         p = os.path.join(REPO_ROOT, ".venv", "bin", name)
@@ -58,60 +59,28 @@ def find_venv_python():
     return sys.executable
 
 
-# ── tegrastats helpers ────────────────────────────────────────────────────────
-
-def start_tegrastats(interval_ms):
-    # Let a launch failure (tegrastats missing) propagate — surfaced, not masked.
-    return subprocess.Popen(
-        ["tegrastats", "--interval", str(interval_ms)],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, bufsize=1,
-    )
-
-
-def drain_tegrastats(proc):
-    """Non-blocking drain; return latest (gpu_pct, emc_pct) or (None, None)."""
-    if proc is None:
-        return None, None
-    gpu = emc = None
-    while True:
-        ready, _, _ = select.select([proc.stdout], [], [], 0)
-        if not ready:
-            break
-        line = proc.stdout.readline()
-        if not line:
-            break
-        m = re.search(r'GR3D_FREQ\s+(\d+)%', line)
-        if m:
-            gpu = float(m.group(1))
-        m = re.search(r'EMC_FREQ\s+(\d+)%', line)
-        if m:
-            emc = float(m.group(1))
-    return gpu, emc
-
-
-def stop_tegrastats(proc):
-    if proc is None:
-        return
-    proc.terminate()
-    try:
-        proc.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        proc.kill()
+def child_env(gpu_index=GPU_INDEX):
+    """Environment for the workload subprocess: pin CUDA to the monitored GPU.
+    With CUDA_DEVICE_ORDER=PCI_BUS_ID, nvidia-smi index gpu_index is the same
+    physical GPU that CUDA_VISIBLE_DEVICES=gpu_index selects (as cuda:0), so the
+    process we measure is the process doing the work."""
+    env = dict(os.environ)
+    env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
+    return env
 
 
 # ── Background power sampler ──────────────────────────────────────────────────
 
 class PowerSampler:
-    """Samples INA3221 + tegrastats at POLL_S intervals in a daemon thread."""
+    """Samples nvidia-smi power + GPU utilization at POLL_S intervals in a daemon
+    thread. (The Jetson version also scraped tegrastats EMC%; on V100 DRAM
+    activity comes from the DCGM BytesSampler instead, so emc_samples is dropped.)"""
 
-    def __init__(self, volt_path, curr_path, ts_proc):
-        self.volt_path      = volt_path
-        self.curr_path      = curr_path
-        self.ts_proc        = ts_proc
+    def __init__(self, gpu_index=GPU_INDEX):
+        self.gpu_index      = gpu_index
         self.power_samples  = []   # (monotonic_t, power_mw)
         self.gpu_samples    = []   # (monotonic_t, gpu_pct)
-        self.emc_samples    = []   # (monotonic_t, emc_pct)
         self._stop          = threading.Event()
         self._exc           = None
         self._thread        = threading.Thread(target=self._run, daemon=True)
@@ -130,77 +99,67 @@ class PowerSampler:
     def _run(self):
         try:
             while not self._stop.is_set():
-                t   = time.monotonic()
-                mw  = read_power_mw(self.volt_path, self.curr_path)
-                gpu, emc = drain_tegrastats(self.ts_proc)
+                t = time.monotonic()
+                mw, gpu, _clk = read_gpu_sample(self.gpu_index)
                 self.power_samples.append((t, mw))
-                # gpu/emc are None only until tegrastats emits its first line — a
-                # genuine "no data yet", not a failure, so those stay guarded.
-                if gpu is not None:
-                    self.gpu_samples.append((t, gpu))
-                if emc is not None:
-                    self.emc_samples.append((t, emc))
+                self.gpu_samples.append((t, gpu))
                 self._stop.wait(POLL_S)
         except BaseException as e:
             self._exc = e
 
 
-# ── DRAM bytes sampler (actmon, via sudoers reader) ───────────────────────────
-
-ACTMON_READER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "actmon_reader.py")
-
+# ── DRAM bytes sampler (DCGM DRAM-active, field 1005) ─────────────────────────
 
 class BytesSampler:
     """
-    Streams DRAM bandwidth from the privileged actmon reader (root-only debugfs)
-    so the unprivileged calibration sweep can integrate bytes moved. Mirrors
-    PowerSampler's lifecycle; designed to start/stop on the SAME window as the
-    PowerSampler so bytes are commensurable with net_energy_j / duration_s.
+    Streams the DRAM-active fraction from `dcgmi dmon -e 1005` (DCGM field 1005,
+    DCGM_FI_PROF_DRAM_ACTIVE) so the calibration sweep can integrate DRAM bytes
+    moved. Mirrors PowerSampler's lifecycle; designed to start/stop on the SAME
+    window as the PowerSampler so bytes are commensurable with net_energy_j /
+    duration_s.
 
-    Requires the NOPASSWD sudoers entry for actmon_reader.py (see that file's
-    header). A spawn failure raises immediately; if the reader produces no samples
-    (e.g. sudoers not configured) the caller is expected to treat that as a hard
-    error (see run_workload / require_samples), not silently drop the byte term.
-    The reader's stderr is inherited so its diagnostics are visible.
+    Requires a running nv-hostengine (root; `sudo nv-hostengine`), but the dcgmi
+    client itself is unprivileged — no sudo here. A spawn failure raises
+    immediately; if the stream produces no samples (e.g. host engine down) the
+    caller is expected to treat that as a hard error (see run_workload /
+    require_samples), not silently drop the byte term. The reader's stderr is
+    merged into stdout so its diagnostics are visible.
     """
 
-    def __init__(self):
-        self._to_bytes_per_s = actmon_bytes_per_s  # single source of truth
+    def __init__(self, gpu_index=GPU_INDEX):
+        self.gpu_index = gpu_index
         self.samples = []          # (monotonic_t, bytes_per_s)
         self.available = False
         self._stop = threading.Event()
         self._exc = None
         self._thread = threading.Thread(target=self._run, daemon=True)
-        # -n: never prompt; fail immediately if NOPASSWD is not configured. A
-        # Popen failure (sudo missing) propagates rather than being masked.
-        # stderr inherited (not DEVNULL) so the reader's "must run as root" message
-        # and any traceback are visible for debugging.
         self.proc = subprocess.Popen(
-            ["sudo", "-n", find_venv_python(), ACTMON_READER_SCRIPT,
-             "--interval", str(POLL_S)],
-            stdout=subprocess.PIPE, text=True, bufsize=1,
+            ["dcgmi", "dmon", "-e", str(DRAM_ACTIVE_FIELD),
+             "-i", str(gpu_index), "-d", str(int(POLL_S * 1000))],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
         )
 
     def start(self):
         self._thread.start()
 
     def stop(self):
-        # The reader runs as root (via sudo); a non-root terminate()/kill() would
-        # EPERM, so we stop it by CLOSING the read end of its stdout pipe — the
-        # reader's next write then raises BrokenPipeError and it self-exits (see
-        # actmon_reader.py). This avoids leaking a root process per workload.
+        # Stop the stream by closing the read end of stdout and terminating the
+        # (unprivileged) dcgmi client.
         self._stop.set()
+        try:
+            self.proc.terminate()
+        except OSError:
+            pass
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
         try:
             self.proc.stdout.close()
         except OSError:
             pass
-        # No TimeoutExpired swallow: if the reader did NOT exit after we closed the
-        # pipe, that is a real problem (leaked root process) we want surfaced.
-        self.proc.wait(timeout=5)
         if self._thread.is_alive():
             self._thread.join(timeout=2)
-        # Surface any failure that happened in the reader-draining thread.
         if self._exc is not None:
             raise self._exc
 
@@ -209,27 +168,25 @@ class BytesSampler:
             for line in iter(self.proc.stdout.readline, ""):
                 if self._stop.is_set():
                     break
-                parts = line.split()
-                if not parts:
+                frac = _parse_dcgm_dram_line(line)
+                if frac is None:
                     continue
-                # No try/except around the parse: a malformed line from the reader
-                # is unexpected and should surface, not be silently skipped.
-                util = float(parts[1])
-                emc_rate = float(parts[2])
+                frac = max(0.0, min(1.0, frac))
                 self.available = True
-                self.samples.append((time.monotonic(), self._to_bytes_per_s(util, emc_rate)))
+                self.samples.append((time.monotonic(), actmon_bytes_per_s(frac)))
         except BaseException as e:
-            # Only an intentional stop (pipe closed by stop()) is expected here;
-            # anything else is a real error to re-raise from stop().
+            # Only an intentional stop is expected here; anything else re-raises.
             if not self._stop.is_set():
                 self._exc = e
 
     def require_samples(self):
-        """Raise if the reader produced no samples (sudoers/root misconfigured)."""
+        """Raise if the DCGM stream produced no samples (host engine down / field
+        1005 unavailable on this GPU/driver)."""
         if not self.available:
             raise RuntimeError(
-                "actmon reader produced no samples — is the NOPASSWD sudoers entry "
-                "for actmon_reader.py configured and are you able to sudo -n?")
+                "DCGM DRAM-active (field 1005) produced no samples — is "
+                "nv-hostengine running (sudo nv-hostengine) and does "
+                "`dcgmi dmon -e 1005` work on this GPU?")
 
     def total_tb(self):
         """Trapezoidal integration of bytes/s → terabytes, or None if too few samples."""
@@ -247,13 +204,21 @@ class BytesSampler:
             return None
         return mean(b for _, b in self.samples)
 
+    def avg_dram_pct(self):
+        """Average DRAM-active fraction over the window, as a percent (the V100
+        analog of the Jetson EMC%). None if no samples."""
+        if not self.samples:
+            return None
+        peak = V100_PROFILE["PEAK_BW_BYTES_S"]
+        return mean(b for _, b in self.samples) / peak * 100.0
+
 
 # ── Idle sampling ─────────────────────────────────────────────────────────────
 
-def sample_idle(duration_s, volt_path, curr_path, ts_proc, label):
+def sample_idle(duration_s, gpu_index, label):
     """Blocking idle sample; returns list of (mono_t, power_mw)."""
     print(f"  [{label}] sampling idle for {duration_s:.0f}s ...", flush=True)
-    sampler = PowerSampler(volt_path, curr_path, ts_proc)
+    sampler = PowerSampler(gpu_index)
     sampler.start()
     time.sleep(duration_s)
     sampler.stop()
@@ -289,21 +254,20 @@ def compute_net_energy(power_samples, idle_baseline_mw):
     return net_energy_j, avg_net_mw
 
 
-def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
+def run_workload(config, idle_baseline_mw, gpu_index=GPU_INDEX):
     """
-    Launch sample_ml_workload.py, sample power in parallel, return result dict.
-    stdout is echoed live; power is collected by a background thread.
+    Launch sample_ml_workload.py (pinned to gpu_index), sample power + DRAM in
+    parallel, return result dict. stdout is echoed live; power is collected by a
+    background thread.
     """
-    # "-u" forces the child's stdout unbuffered. Without it, piped stdout is
-    # block-buffered and the "[redteam] Starting workload..." trigger below does
-    # not reach this parent until the buffer flushes (near exit for short runs),
-    # starting the power sampler far too late — the race that corrupted the
-    # original calibration (only 3-32 samples on shorter runs).
+    # "-u" forces the child's stdout unbuffered so the "[redteam] Starting
+    # workload..." trigger below reaches this parent promptly (else piped stdout
+    # is block-buffered and the power sampler starts far too late).
     #
     # A config may override the workload entirely via {"script": path,
     # "args": [...]} — any script that speaks the same stdout protocol (the
     # "Starting workload" trigger + "Ground truth total : X TFLOPs" line) goes
-    # through this exact sampling path, e.g. old/adversarial_workload.py.
+    # through this exact sampling path.
     if "script" in config:
         cmd = ([find_venv_python(), "-u", config["script"]]
                + [str(a) for a in config.get("args", [])])
@@ -326,13 +290,12 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
 
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        env=child_env(gpu_index),
     )
 
     # Power sampling starts only after "[redteam] Starting workload..." so that
     # CUDA init, model creation, the warmup pass, and the FLOPs probe are all
     # excluded from the energy integral (they are not in the GT FLOP count).
-    # Read via readline (not `for line in proc.stdout`) to avoid the iterator's
-    # read-ahead buffering, which would also delay the trigger.
     sampler = None
     bytes_sampler = None
     t_start = None
@@ -343,10 +306,10 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
         output_lines.append(line)
         if sampler is None and "[redteam] Starting workload" in line:
             t_start = time.monotonic()
-            sampler = PowerSampler(volt_path, curr_path, ts_proc)
+            sampler = PowerSampler(gpu_index)
             sampler.start()
             # Same window as the power sampler so bytes are commensurable.
-            bytes_sampler = BytesSampler()
+            bytes_sampler = BytesSampler(gpu_index)
             bytes_sampler.start()
     proc.wait()
     stdout_text = "".join(output_lines)
@@ -362,9 +325,10 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
     sampler.stop()
     duration_s = time.monotonic() - t_start
     bytes_sampler.stop()          # created alongside sampler, so never None here
-    bytes_sampler.require_samples()   # loud if actmon produced nothing
+    bytes_sampler.require_samples()   # loud if DCGM produced nothing
     tb_moved = bytes_sampler.total_tb()
     avg_bytes_per_s = bytes_sampler.avg_bytes_per_s()
+    avg_dram_pct = bytes_sampler.avg_dram_pct()
     gt_tflops = parse_ground_truth_tflops(stdout_text)
 
     if proc.returncode != 0:
@@ -384,7 +348,7 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
         "idle_baseline_mw": idle_baseline_mw,
         "power_samples":    sampler.power_samples,
         "gpu_samples":      sampler.gpu_samples,
-        "emc_samples":      sampler.emc_samples,
+        "emc_samples":      [],
         "ground_truth_tf":  gt_tflops,
         "net_energy_j":     net_energy_j,
         "avg_net_power_w":  avg_net_w,
@@ -393,8 +357,7 @@ def run_workload(config, idle_baseline_mw, volt_path, curr_path, ts_proc):
         "peak_raw_mw":      max(raw_mw)     if raw_mw else None,
         "avg_gpu_pct":      mean(g for _, g in sampler.gpu_samples)
                             if sampler.gpu_samples else None,
-        "avg_emc_pct":      mean(e for _, e in sampler.emc_samples)
-                            if sampler.emc_samples else None,
+        "avg_emc_pct":      avg_dram_pct,
         "tb_moved":         tb_moved,
         "avg_bytes_per_s":  avg_bytes_per_s,
         "n_power_samples":  len(sampler.power_samples),

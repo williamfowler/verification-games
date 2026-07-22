@@ -11,51 +11,45 @@ sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "power_calibration"))
 os.chdir(REPO)
 
-from calibrate_power import (find_ina3221_paths, start_tegrastats,
-                             stop_tegrastats, PowerSampler, BytesSampler,
-                             find_venv_python, POLL_S)
+from calibrate_power import (GPU_INDEX, PowerSampler, BytesSampler,
+                             find_venv_python, child_env, POLL_S)
 
 PRE_S, POST_S = 60.0, 60.0
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "timeseries.json")
 
-volt, curr = find_ina3221_paths()
-assert volt
-ts_proc = start_tegrastats(int(POLL_S * 1000))
-try:
-    power = PowerSampler(volt, curr, ts_proc)
-    dram = BytesSampler()
-    t0 = time.monotonic()
-    power.start()
-    dram.start()
+power = PowerSampler(GPU_INDEX)
+dram = BytesSampler(GPU_INDEX)
+t0 = time.monotonic()
+power.start()
+dram.start()
 
-    print(f"pre-roll idle {PRE_S:.0f}s...", flush=True)
-    time.sleep(PRE_S)
+print(f"pre-roll idle {PRE_S:.0f}s...", flush=True)
+time.sleep(PRE_S)
 
-    cmd = [find_venv_python(), "-u", "sample_ml_workload.py",
-           "--steps", "9000", "--batch-size", "16", "--seq-len", "128",
-           "--d-model", "384"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True)
-    t_launch = time.monotonic() - t0
-    t_start = None
-    for line in iter(proc.stdout.readline, ""):
-        if "[redteam] Starting workload" in line:
-            t_start = time.monotonic() - t0
-        if "Ground truth total" in line or "steps/s" in line:
-            pass
-    proc.wait()
-    t_end = time.monotonic() - t0
-    print(f"workload done (launch {t_launch:.1f}s, start {t_start:.1f}s,"
-          f" end {t_end:.1f}s)", flush=True)
+cmd = [find_venv_python(), "-u", "sample_ml_workload.py",
+       "--steps", "9000", "--batch-size", "16", "--seq-len", "128",
+       "--d-model", "384"]
+proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True,
+                        env=child_env(GPU_INDEX))
+t_launch = time.monotonic() - t0
+t_start = None
+for line in iter(proc.stdout.readline, ""):
+    if "[redteam] Starting workload" in line:
+        t_start = time.monotonic() - t0
+    if "Ground truth total" in line or "steps/s" in line:
+        pass
+proc.wait()
+t_end = time.monotonic() - t0
+print(f"workload done (launch {t_launch:.1f}s, start {t_start:.1f}s,"
+      f" end {t_end:.1f}s)", flush=True)
 
-    print(f"post-roll idle {POST_S:.0f}s...", flush=True)
-    time.sleep(POST_S)
+print(f"post-roll idle {POST_S:.0f}s...", flush=True)
+time.sleep(POST_S)
 
-    power.stop()
-    dram.stop()
-    dram.require_samples()
-finally:
-    stop_tegrastats(ts_proc)
+power.stop()
+dram.stop()
+dram.require_samples()
 
 t_base = power.power_samples[0][0]
 payload = {

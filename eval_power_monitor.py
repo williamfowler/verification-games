@@ -59,10 +59,9 @@ import detect_flops
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "power_calibration"))
 from calibrate_power import (
-    find_ina3221_paths,
+    GPU_INDEX,
     read_power_mw,
-    start_tegrastats,
-    stop_tegrastats,
+    BytesSampler,
     sample_idle,
     run_workload,
     POLL_S,
@@ -132,7 +131,9 @@ CONFIGS = [
 DEFAULT_OUTPUT        = "eval_results.txt"
 BASELINE_SECONDS      = 90       # single startup idle baseline (>=180 samples at 2 Hz)
 FRONTIER_MIN_GPU_UTIL = 80.0     # avg GPU util % a run must clear to be "frontier-like"
-P_OVERHEAD_MAX_W      = 4.0      # search ceiling for the fixed-overhead power
+P_OVERHEAD_MAX_W      = 80.0     # search ceiling for the fixed-overhead power
+                                 # (V100 active overhead is tens of W, vs the
+                                 # Jetson's few W — was 4.0 on the Orin Nano)
 TRAIN_FRACTION        = 2.0 / 3.0
 TARGET_ERR_PCT        = 10.0
 
@@ -875,14 +876,14 @@ def run_bias_report(paths, output_path):
 
 # ── Run + report ───────────────────────────────────────────────────────────────
 
-def run_sweep(configs, idle_baseline_mw, volt_path, curr_path, ts_proc):
+def run_sweep(configs, idle_baseline_mw, gpu_index):
     """Run every config against the single shared idle baseline. The frontier
     gate and TRAIN/TEST assignment are applied afterward in main()."""
     records = []
     for i, cfg in enumerate(configs):
         print(f"\n[{i+1}/{len(configs)}] {config_label(cfg)}"
               f"  steps={cfg['steps']}", flush=True)
-        result = run_workload(cfg, idle_baseline_mw, volt_path, curr_path, ts_proc)
+        result = run_workload(cfg, idle_baseline_mw, gpu_index)
         result["label"] = config_label(cfg)
         result["split"] = "excl"   # overwritten for the frontier runs that get split
 
@@ -974,8 +975,8 @@ def write_report(train, test, frontier, sub_frontier, all_records,
           f"{FRONTIER_MIN_GPU_UTIL:.0f}%  ({len(frontier)} of {len(frontier)+len(sub_frontier)} valid)")
         w(f"Split     : {split_desc}")
         if not emc_available:
-            w("EMC term  : UNAVAILABLE (no actmon tb_moved for frontier runs;"
-              " is the sudoers actmon_reader configured?) — 2-param only")
+            w("EMC term  : UNAVAILABLE (no DCGM tb_moved for frontier runs;"
+              " is nv-hostengine running?) — 2-param only")
         w("=" * 82)
         w()
         w("VALIDATION FIT  (fit on TRAIN only)")
@@ -1107,13 +1108,13 @@ def write_report(train, test, frontier, sub_frontier, all_records,
             w(f"  E_MARGINAL_J_PER_TFLOP   = {ship_e_emc:.2f}   # (EMC fit)")
             w(f"  E_PER_TB_J               = {ship_c_emc:.3f}")
         else:
-            w(f"  # E_PER_TB_J unavailable (no actmon data); leave it at 0.0")
+            w(f"  # E_PER_TB_J unavailable (no DCGM data); leave it at 0.0")
         if fingerprint:
             w(f"  # Matched CALIBRATION_FINGERPRINT (paste alongside — constants")
-            w(f"  # are valid ONLY on this device + power mode):")
-            w(f"  #   device_model  : {fingerprint['device_model']}")
-            w(f"  #   l4t_release   : {fingerprint['l4t_release']}")
-            w(f"  #   nvpmodel_mode : {fingerprint['nvpmodel_mode']}")
+            w(f"  # are valid ONLY on this device):")
+            w(f"  #   device_model   : {fingerprint['device_model']}")
+            w(f"  #   driver_version : {fingerprint['driver_version']}")
+            w(f"  #   cuda_version   : {fingerprint['cuda_version']}")
         w()
         w("RAW RECORDS  (label split net_J t_s gt_TFLOPs avg_net_W avg_gpu% avg_emc% tb_TB)")
         w("-" * 82)
@@ -1136,49 +1137,44 @@ def run_sweep_session(args):
     """The device-bound half: sensors, single idle baseline, full workload sweep.
     Returns (records, idle_baseline_mw). Dumps the records JSON before returning
     so a crash later in analysis never loses the sweep."""
-    if os.geteuid() == 0:
-        print("ERROR: do not run as root. INA3221 sysfs is world-readable and "
-              "CUDA needs the regular user's venv. Run without sudo.")
-        sys.exit(1)
+    gpu_index = GPU_INDEX
+    read_power_mw(gpu_index)   # raises loudly if nvidia-smi is unreadable
+    print(f"nvidia-smi power OK (GPU {gpu_index}).")
 
-    volt_path, curr_path = find_ina3221_paths()
-    if volt_path is None:
-        print("ERROR: INA3221 sensor not found.")
-        sys.exit(1)
-    read_power_mw(volt_path, curr_path)   # raises loudly if the sensor is unreadable
-    print(f"INA3221 sensor OK: {volt_path}")
+    # Probe the DCGM DRAM-active stream (field 1005) before the sweep so a missing
+    # nv-hostengine fails here, not 90s into the baseline. A short window must
+    # yield at least one sample.
+    probe = BytesSampler(gpu_index)
+    probe.start()
+    time.sleep(3.0)
+    probe.stop()
+    probe.require_samples()
+    print("DCGM DRAM-active (field 1005) OK.")
 
-    ts_proc = start_tegrastats(int(POLL_S * 1000))   # raises if tegrastats is missing
-    print("tegrastats started.")
+    # ── Single idle baseline (measured once, before any workload) ─────────
+    print(f"\nMeasuring single idle baseline ({args.baseline_seconds}s)."
+          f" Ensure no GPU workloads are running.", flush=True)
+    idle = sample_idle(args.baseline_seconds, gpu_index, "baseline")
+    idle_mw = [mw for _, mw in idle]
+    if not idle_mw:
+        # The baseline is critical (it sets the matched set); no samples means
+        # something is wrong with sampling — fail loudly rather than fall back.
+        raise RuntimeError(
+            "no idle power samples collected — cannot establish a baseline "
+            "(check nvidia-smi and POLL_S timing).")
+    idle_baseline_mw = median(idle_mw)
+    sd = stdev(idle_mw) if len(idle_mw) > 1 else 0.0
+    print(f"Idle baseline: {idle_baseline_mw:.1f} mW"
+          f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
+          f"  — shared by ALL workloads", flush=True)
 
-    try:
-        # ── Single idle baseline (measured once, before any workload) ─────────
-        print(f"\nMeasuring single idle baseline ({args.baseline_seconds}s)."
-              f" Ensure no GPU workloads are running.", flush=True)
-        idle = sample_idle(args.baseline_seconds, volt_path, curr_path,
-                           ts_proc, "baseline")
-        idle_mw = [mw for _, mw in idle]
-        if not idle_mw:
-            # The baseline is critical (it sets the matched set); no samples means
-            # something is wrong with sampling — fail loudly rather than fall back.
-            raise RuntimeError(
-                "no idle power samples collected — cannot establish a baseline "
-                "(check the INA3221 sensor and POLL_S timing).")
-        idle_baseline_mw = median(idle_mw)
-        sd = stdev(idle_mw) if len(idle_mw) > 1 else 0.0
-        print(f"Idle baseline: {idle_baseline_mw:.1f} mW"
-              f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
-              f"  — shared by ALL workloads", flush=True)
-
-        # ── Run the workload pool against that one baseline ───────────────────
-        configs = CONFIGS
-        if args.pool == "fp32":
-            configs = [c for c in CONFIGS
-                       if c.get("precision", "fp32") == "fp32"]
-            print(f"Pool: fp32-only — {len(configs)} of {len(CONFIGS)} configs")
-        records = run_sweep(configs, idle_baseline_mw, volt_path, curr_path, ts_proc)
-    finally:
-        stop_tegrastats(ts_proc)
+    # ── Run the workload pool against that one baseline ───────────────────
+    configs = CONFIGS
+    if args.pool == "fp32":
+        configs = [c for c in CONFIGS
+                   if c.get("precision", "fp32") == "fp32"]
+        print(f"Pool: fp32-only — {len(configs)} of {len(CONFIGS)} configs")
+    records = run_sweep(configs, idle_baseline_mw, gpu_index)
 
     # Fingerprint the device + power mode this sweep (and thus any constants it
     # recommends) is matched to.

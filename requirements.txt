@@ -1,8 +1,7 @@
-# torch must come from the Jetson AI Lab index (sm_87 wheels) and be installed
-# with --no-deps — standard PyPI wheels do not run on the Orin's GPU.
-# setup.sh handles this; see README.md if installing by hand.
-torch==2.9.1
-nvidia-cudss-cu12==0.7.1.6
-jetson-stats==4.3.2
-numpy==2.2.6
-matplotlib==3.5.1
+# Ported to x86 dual-Tesla-V100. Standard PyPI torch (cu12x wheels include sm_70,
+# so they run on the V100) — NOT the Jetson AI Lab wheel index. The DRAM signal
+# comes from DCGM (system `datacenter-gpu-manager` / `dcgmi` + `nv-hostengine`),
+# not a Python package. jetson-stats is not used on this platform.
+torch
+numpy
+matplotlib
