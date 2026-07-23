@@ -918,14 +918,15 @@ def _excluded_record(cfg, label, reason):
             "avg_gpu_pct": None, "tb_moved": None}
 
 
-def run_sweep(configs, idle_baseline_mw, gpu_indices, dump_cb=None):
+def run_sweep(configs, idle_baseline_mw, gpu_indices, dump_cb=None, prior=None):
     """Run every config against the shared idle baseline. Each config's `steps` is
     auto-sized from a short probe (steps = round(TARGET_ACTIVE_S x steps/s)) so
     every run does ~the same active wall-clock. OOM / sizing failures become
     excluded records (logged, not crashes). dump_cb(records) fires after each
-    config so a crash mid-sweep never loses progress. Frontier gate + split apply
-    later in main()."""
-    records = []
+    config so a crash mid-sweep never loses progress. `prior` seeds the record
+    list (resume: already-completed records kept + dumped alongside new ones).
+    Frontier gate + split apply later in main()."""
+    records = list(prior or [])
     for i, cfg in enumerate(configs):
         label = config_label(cfg)
         fam = cfg.get("family", "?")
@@ -1215,20 +1216,9 @@ def run_sweep_session(args):
     nvp.start(); time.sleep(2.0); nvp.stop(); nvp.require_samples()
     print("DCGM NVLink/PCIe (fields 1009-1012) OK.")
 
-    # ── Single idle baseline (both GPUs summed, measured once) ─────────
-    print(f"\nMeasuring single idle baseline ({args.baseline_seconds}s)."
-          f" Ensure no GPU workloads are running.", flush=True)
-    idle = sample_idle(args.baseline_seconds, gpu_indices, "baseline")
-    idle_mw = [mw for _, mw in idle]
-    if not idle_mw:
-        raise RuntimeError(
-            "no idle power samples collected — cannot establish a baseline "
-            "(check nvidia-smi and POLL_S timing).")
-    idle_baseline_mw = median(idle_mw)
-    sd = stdev(idle_mw) if len(idle_mw) > 1 else 0.0
-    print(f"Idle baseline: {idle_baseline_mw:.1f} mW (both GPUs)"
-          f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
-          f"  — shared by ALL workloads", flush=True)
+    fingerprint = detect_flops.live_fingerprint()
+    records_json = (args.records_json
+                    or os.path.splitext(args.output)[0] + "_records.json")
 
     # ── Pool filter (precision subset) ────────────────────────────────────
     configs = CONFIGS
@@ -1236,16 +1226,37 @@ def run_sweep_session(args):
         configs = [c for c in CONFIGS if c.get("precision", "fp16") == args.pool]
         print(f"Pool: {args.pool}-only — {len(configs)} of {len(CONFIGS)} configs")
 
-    fingerprint = detect_flops.live_fingerprint()
-    records_json = (args.records_json
-                    or os.path.splitext(args.output)[0] + "_records.json")
+    # ── Resume: reuse existing records + their baseline; skip done configs ──
+    prior = []
+    if args.resume and os.path.exists(records_json):
+        prior, idle_baseline_mw, _bsec, _fp = load_records_json(records_json)
+        done = {r["label"] for r in prior}
+        configs = [c for c in configs if config_label(c) not in done]
+        print(f"RESUME: {len(prior)} records already done; reusing baseline "
+              f"{idle_baseline_mw:.1f} mW; {len(configs)} configs remaining.")
+    else:
+        # ── Single idle baseline (both GPUs summed, measured once) ─────────
+        print(f"\nMeasuring single idle baseline ({args.baseline_seconds}s)."
+              f" Ensure no GPU workloads are running.", flush=True)
+        idle = sample_idle(args.baseline_seconds, gpu_indices, "baseline")
+        idle_mw = [mw for _, mw in idle]
+        if not idle_mw:
+            raise RuntimeError(
+                "no idle power samples collected — cannot establish a baseline "
+                "(check nvidia-smi and POLL_S timing).")
+        idle_baseline_mw = median(idle_mw)
+        sd = stdev(idle_mw) if len(idle_mw) > 1 else 0.0
+        print(f"Idle baseline: {idle_baseline_mw:.1f} mW (both GPUs)"
+              f"  (n={len(idle_mw)}, stdev={sd:.1f} mW)"
+              f"  — shared by ALL workloads", flush=True)
 
     # Dump after every config so a crash mid-sweep never loses progress.
     def dump_cb(recs):
         dump_records_json(records_json, recs, idle_baseline_mw,
                           args.baseline_seconds, fingerprint, quiet=True)
 
-    records = run_sweep(configs, idle_baseline_mw, gpu_indices, dump_cb=dump_cb)
+    records = run_sweep(configs, idle_baseline_mw, gpu_indices,
+                        dump_cb=dump_cb, prior=prior)
     dump_records_json(records_json, records, idle_baseline_mw,
                       args.baseline_seconds, fingerprint)
     return records, idle_baseline_mw, fingerprint
@@ -1265,6 +1276,10 @@ def main():
     parser.add_argument("--records-json", default=None, metavar="FILE",
                         help="Where a sweep dumps its per-run records"
                              " (default: <output stem>_records.json)")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume a partial sweep: reuse the existing "
+                             "records-json (+ its idle baseline) and run only the "
+                             "configs not already recorded.")
     parser.add_argument("--refit-from", default=None, metavar="FILE",
                         help="Skip the sweep: reload records from a *_records.json"
                              " dump or a previous report's RAW RECORDS section and"
