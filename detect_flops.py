@@ -70,17 +70,24 @@ DRAM_ACTIVE_FIELD = 1005
 # sub-frontier estimate just means "below the frontier detection floor", not a
 # real FLOP count.
 #
-# ┌─ RECOMMENDED CONSTANTS (paste block from eval_power_monitor.py) ───────────┐
-# Fit 2026-07-22 on this dual-V100 box (eval_results_v2 sweep), fp32-frontier
-# subset — 12 transformer configs at avg GPU util >= 80%, matching the report's
-# fp32-frontier methodology. 2-param all-frontier max err 13.86% (mean 8.66%);
-# 3-param max 14.72% (mean 6.22%). The V100 idles ~49 W (vs the Jetson's 0.64 W)
-# and only 12 configs clear the 80% gate (vs 21 on the Orin Nano), so the held-out
-# error is a touch looser than the Jetson's <10%. FALLBACK_IDLE_POWER_MW is the
-# matched startup idle baseline (median over 90 s); all values are ONE matched set.
-FALLBACK_IDLE_POWER_MW = 48930.0
-POWER_OVERHEAD_W         = 3.750
-E_MARGINAL_J_PER_TFLOP   = 18.88
+# ┌─ RECOMMENDED CONSTANTS (fp16-AMP DDP, 2× V100) ────────────────────────────┐
+# Fit 2026-07-23 on this box (eval_results_v100_ddp sweep), fp16-frontier subset —
+# 88 of 91 DDP configs cleared the BOTH-GPU >=80% gate. Power is SUMMED over both
+# V100s; FLOPs are the aggregate across ranks. 2-param all-frontier max err 32.0%
+# (mean 13.1%); LOO held-out max 32.2% (mean 13.2%). The error is looser than the
+# porting-era fp32 fit (below) because the 88 configs span a far wider workload
+# space (long-sequence / wide-FFN / deep-narrow have different energy-per-FLOP);
+# it is a rough meter here, not a tight one. FALLBACK_IDLE_POWER_MW is the matched
+# both-GPU idle baseline. All values are ONE matched set for the fp16-DDP regime.
+FALLBACK_IDLE_POWER_MW = 97890.0     # both GPUs summed
+POWER_OVERHEAD_W         = 0.000     # saturated regime: net energy ~ pure FLOPs
+E_MARGINAL_J_PER_TFLOP   = 4.74
+#
+# LEGACY reference — porting-era fp32 single-GPU fit (2026-07-22, eval_results_v2,
+# 12 frontier configs): FALLBACK_IDLE_POWER_MW=48930.0, POWER_OVERHEAD_W=3.750,
+# E_MARGINAL_J_PER_TFLOP=18.88, POWER_OVERHEAD_EMC_W=9.750, E_MARGINAL_EMC=8.21,
+# E_PER_TB_J=188.022. A DIFFERENT regime (1 GPU, fp32, ~8x more J/TFLOP than fp16);
+# never pool it with the DDP fit above. Kept for the Jetson<->V100 write-up.
 
 # EMC / DRAM-bytes term (memory-energy) — its OWN matched constants.
 #
@@ -98,14 +105,13 @@ E_MARGINAL_J_PER_TFLOP   = 18.88
 # inflate energy). The byte term, fed by the DCGM DRAM-activity fraction below,
 # is what catches that. TB_moved comes from integrating DRAM bandwidth
 # utilization over the workload; see DcgmDramReader. The byte scale is absorbed
-# into the fitted E_PER_TB_J. PLACEHOLDERS — recalibrate on V100.
-POWER_OVERHEAD_EMC_W       = 9.750
-E_MARGINAL_EMC_J_PER_TFLOP = 8.21
-E_PER_TB_J                 = 188.022   # J per true TB — physically sane (HBM2
-                                       # ~50-150 J/TB range); the DCGM DRAM-active
-                                       # fraction is a true bandwidth fraction, so
-                                       # unlike the Jetson's uncalibrated actmon
-                                       # (4621 J/actmon-TB) this is directly J/TB.
+# into the fitted E_PER_TB_J. fp16-DDP fit (2026-07-23), both GPUs' DRAM summed.
+POWER_OVERHEAD_EMC_W       = 0.000
+E_MARGINAL_EMC_J_PER_TFLOP = 3.56
+E_PER_TB_J                 = 91.571    # J per true TB — physically sane (HBM2
+                                       # ~50-150 J/TB range). fp16-DDP fit; both
+                                       # GPUs' DRAM traffic summed. DCGM DRAM-active
+                                       # (field 1005) is a true bandwidth fraction.
 # └────────────────────────────────────────────────────────────────────────────┘
 
 # Fingerprint of the device the constants above were calibrated on. On any other
@@ -116,7 +122,7 @@ CALIBRATION_FINGERPRINT = {
     "device_model": "Tesla V100-SXM2-16GB",     # nvidia-smi --query-gpu=name
     "driver_version": "580.159.03",             # nvidia-smi --query-gpu=driver_version
     "cuda_version": "13.0",                      # nvidia-smi CUDA Version
-    "calibrated": "2026-07-22",
+    "calibrated": "2026-07-23",
 }
 
 
