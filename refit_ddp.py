@@ -17,8 +17,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pow
 from eval_power_monitor import (
     load_records, valid, is_frontier, FRONTIER_MIN_GPU_UTIL,
     fit_active_energy_model, fit_active_energy_emc_model,
-    score, score_emc, err_stats,
+    fit_active_energy_nvl_model, score, score_emc, score_nvl, err_stats,
 )
+
+
+def _loo(frontier, fit_fn, score_fn, key):
+    """Leave-one-out held-out (max%, mean%) for a fit/score pair."""
+    errs = []
+    for i in range(len(frontier)):
+        tr = frontier[:i] + frontier[i + 1:]
+        score_fn(frontier[i:i + 1], *fit_fn(tr))
+        errs.append(frontier[i][key])
+    errs = [e for e in errs if e is not None]
+    return (max(errs), sum(errs) / len(errs)) if errs else (None, None)
 
 
 def main():
@@ -36,34 +47,52 @@ def main():
     # Ship fits (all fp16 frontier).
     e2, p2 = fit_active_energy_model(frontier)
     e3, c3, p3 = fit_active_energy_emc_model(frontier)
-    score(frontier, e2, p2); score_emc(frontier, e3, c3, p3)
+    e4, c4tb, c4nv, p4 = fit_active_energy_nvl_model(frontier)
+    score(frontier, e2, p2)
+    score_emc(frontier, e3, c3, p3)
+    score_nvl(frontier, e4, c4tb, c4nv, p4)
     mx2, mn2 = err_stats(frontier, "err_pct")
     mx3, mn3 = err_stats(frontier, "err_pct_emc")
+    mx4, mn4 = err_stats(frontier, "err_pct_nvl")
 
-    # Leave-one-out held-out error (2-param).
-    loo = []
-    for i in range(len(frontier)):
-        tr = frontier[:i] + frontier[i+1:]
-        ei, pi = fit_active_energy_model(tr)
-        score(frontier[i:i+1], ei, pi)
-        loo.append(frontier[i]["err_pct"])
-    loo_max = max(loo); loo_mean = sum(loo)/len(loo)
+    lmx2, lmn2 = _loo(frontier, fit_active_energy_model, score, "err_pct")
+    lmx3, lmn3 = _loo(frontier, fit_active_energy_emc_model, score_emc, "err_pct_emc")
+    lmx4, lmn4 = _loo(frontier, fit_active_energy_nvl_model, score_nvl, "err_pct_nvl")
 
-    print(f"\n2-param  ship: E_MARGINAL={e2:.3f} J/TFLOP  P_OVERHEAD={p2:.3f} W"
-          f"  | all-frontier max {mx2:.2f}% mean {mn2:.2f}%  | LOO held-out max {loo_max:.2f}% mean {loo_mean:.2f}%")
-    print(f"3-param  ship: E_MARGINAL={e3:.3f}  E_PER_TB={c3:.3f}  P_OVERHEAD={p3:.3f} W"
-          f"  | all-frontier max {mx3:.2f}% mean {mn3:.2f}%")
+    print(f"\n2-param       : E_MARG={e2:.3f}  P_OH={p2:.3f}"
+          f"  | all-frontier max {mx2:.1f}% mean {mn2:.1f}%  | LOO max {lmx2:.1f}% mean {lmn2:.1f}%")
+    print(f"3-param (DRAM): E_MARG={e3:.3f}  E_PER_TB={c3:.3f}  P_OH={p3:.3f}"
+          f"  | all max {mx3:.1f}% mean {mn3:.1f}%  | LOO max {lmx3:.1f}% mean {lmn3:.1f}%")
+    print(f"4-param (+NVL): E_MARG={e4:.3f}  E_PER_TB={c4tb:.3f}  E_PER_NVL={c4nv:.3f}"
+          f"  P_OH={p4:.3f}  | all max {mx4:.1f}% mean {mn4:.1f}%  | LOO max {lmx4:.1f}% mean {lmn4:.1f}%")
 
-    print("\n" + "=" * 66)
+    print("\n" + "=" * 70)
     print("  RECOMMENDED CONSTANTS (fp16-AMP DDP, 2x V100) — paste into detect_flops.py")
-    print("=" * 66)
+    print("=" * 70)
     print(f"FALLBACK_IDLE_POWER_MW     = {base:.1f}   # both GPUs summed")
     print(f"POWER_OVERHEAD_W           = {p2:.3f}")
     print(f"E_MARGINAL_J_PER_TFLOP     = {e2:.2f}")
     print(f"POWER_OVERHEAD_EMC_W       = {p3:.3f}")
     print(f"E_MARGINAL_EMC_J_PER_TFLOP = {e3:.2f}")
     print(f"E_PER_TB_J                 = {c3:.3f}")
-    print("=" * 66)
+    print("# 4-param NVLink estimator (adversarial tripwire) matched set:")
+    print(f"POWER_OVERHEAD_NVL_W         = {p4:.3f}")
+    print(f"E_MARGINAL_NVL_J_PER_TFLOP   = {e4:.2f}")
+    print(f"E_PER_TB_NVL_J               = {c4tb:.3f}")
+    print(f"E_PER_NVLINK_TB_J            = {c4nv:.3f}")
+    print("=" * 70)
+
+    # NVLink consistency tripwire: the honest NVLink_bytes/J band + false-positive
+    # rate on the frontier (should be 0 — the band is derived from these runs).
+    import detect_flops as d
+    ratios = sorted(r["nvlink_total_bytes"] / r["net_energy_j"] for r in frontier)
+    verdicts = [d.nvlink_consistency(r["net_energy_j"], r["nvlink_total_bytes"])[0]
+                for r in frontier]
+    n_ok = sum(v == "OK" for v in verdicts)
+    print(f"\nNVLink tripwire: honest NVLink/J in [{ratios[0]:.2e}, {ratios[-1]:.2e}]; "
+          f"band [{d.NVLINK_BYTES_PER_J_LO:.1e}, {d.NVLINK_BYTES_PER_J_HI:.1e}] "
+          f"-> {n_ok}/{len(frontier)} honest runs pass (false-positive rate "
+          f"{(len(frontier)-n_ok)/len(frontier)*100:.0f}%). See nvlink_tripwire_demo.py.")
 
 
 if __name__ == "__main__":

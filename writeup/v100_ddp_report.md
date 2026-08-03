@@ -98,12 +98,102 @@ mean error runs 9–19% fairly uniformly (not an outlier), so the estimator is a
 set. `writeup/fig_ddp_est_vs_truth.png` shows the held-out estimates against
 ground truth (aggregate 1651–5192 TFLOPs).
 
+## Ten-trial cross-validation + input ablation (SRF phase-I)
+
+The single-sweep LOO above scores each workload on one trace. The SRF outline
+calls for **10 trials of every workload**, so each of the three estimator inputs
+(power, DRAM-active, NVLink) has a 10-trace distribution and the accuracy claim
+is over resampled splits, not one measurement. All 10 trials are collected
+(`run_trials.py`, one records JSON per trial); `analyze_trials.py` runs the
+generalization analysis.
+
+**Pool.** 88 fp16 workloads clear the 80% gate in *all* 10 trials (the one
+excluded, `d768_b8_s128_L6_ff3072`, is frontier in 9/10 — the family-F boundary
+probe, as designed). **200 random calibrate/evaluate splits**, 59 calibrate / 29
+held-out each; on every split each workload contributes **one randomly drawn
+trace of its 10**, the estimator is fit on the calibrate workloads and scored on
+the held-out ones, so it must generalize to workloads it never saw.
+
+**Headline — held-out error over the 200 splits (`fig_trials_cv_error.png`):**
+
+| estimator inputs | median | mean | p90 | max |
+|---|---|---|---|---|
+| 1 signal · power | **12.9%** | 13.8% | 26.8% | 52.9% |
+| 2 signals · power+DRAM | 15.0% | 16.5% | 31.8% | 69.3% |
+| 3 signals · power+DRAM+NVLink | 15.0% | 16.5% | 31.8% | 69.3% |
+
+**The input ablation (`fig_trials_ablation.png`) is the notable result: adding
+DRAM and NVLink does *not* improve benign accuracy — it slightly hurts.** On the
+saturated frontier the byte signals are collinear with the FLOP term (see the
+`corr(gt,tb)`/cond diagnostics), so the extra coefficients are poorly determined
+and add variance to held-out prediction rather than signal: power-only generalizes
+best (12.9% median), power+DRAM is worse (15.0%), and **power+DRAM+NVLink is
+identical to power+DRAM to the last decimal** — the NVLink coefficient fits to 0
+in every split (`E_PER_NVL → 0`, the collinearity finding, now confirmed across
+200 resamples, not one fit). The scatter also shows the estimator **compresses**:
+tight to ground truth through the mid-range but under-reporting the largest
+wide-FFN / long-sequence workloads (the tail that drives p90/max).
+
+This is the empirical basis for the phase-II/III framing: the byte signals earn
+their place through **adversarial robustness** (the NVLink consistency tripwire
+below), not benign accuracy. A blue team optimizing purely for held-out error on
+benign workloads would ship the 1-signal estimator; it is the *adversary* that
+makes the extra inputs worth their variance cost. Reproduce with
+`python3 analyze_trials.py` (writes the two figures above + a per-workload
+breakdown `fig_trials_per_workload.png` and `trials_cv_results.json`).
+
+## NVLink as an estimator input (adversarial robustness)
+
+The interconnect signal was wired into the estimator two ways, with an honest
+split between them:
+
+**1. As a fitted energy term (4-param `estimate_tflops_nvl`):**
+`E = a·FLOPs + b·DRAM + c·NVLink + d·t`. Empirically **`c` (E_PER_NVLINK_TB_J)
+fits to 0** — the all-reduce volume is **0.89-collinear with the DRAM-bytes
+term**, so the energy decomposition assigns the byte-energy to DRAM and the
+4-param model collapses to the 3-param one (max 47.6% / mean 15.2%). As an
+*accuracy* regressor NVLink is redundant. This is kept and reported, not hidden.
+
+**2. As a consistency tripwire (`nvlink_consistency`) — where the robustness
+actually lives.** The all-reduce invariant is razor-tight: NVLink/step = 16·n_params,
+measured **1.00 ± 0.01×** (CV 1%), so honest fp16-DDP keeps
+`NVLink_bytes / net_energy_J` in a bounded band. A workload that spoofs its
+FLOP-energy signature breaks it:
+
+| scenario | energy-only FLOP est | NVLink/J | tripwire |
+|---|---|---|---|
+| honest run (gt 5192 TF) | 4618 TF (0.9×) | 1.5e8 | **OK** |
+| Spoof A: 2× energy, no all-reduce | 9236 TF (**1.8× true**) | 7.7e4 | **COMM_STARVED** |
+| Spoof B: NVLink flood, 1.5× energy | 6927 TF (**1.3× true**) | 5.1e9 | **COMM_FLOOD** |
+
+The energy-only estimator is fooled in both directions (a compute-burn faking
+training; an interconnect flood inflating power); the NVLink tripwire flags both,
+with **0/88 false positives** on the honest frontier. So the interconnect signal
+does not improve benign accuracy (it can't — it's collinear with DRAM in energy),
+but it makes the FLOP estimate **robust to energy-spoofing adversaries**, which was
+the goal. Reproduce with `python3 nvlink_tripwire_demo.py`.
+
+*Live-daemon note:* the tripwire + 4-param estimator are library functions
+(`detect_flops.py`) exercised at the sweep/analysis level. Wiring them into the
+live `run_background_monitor` loop needs the daemon's single-GPU path converted to
+both-GPU DDP monitoring (summed power + a DCGM NVLink reader) — a follow-on, since
+the constants and band are both-GPU.
+
 ## Artifacts
 
-- `eval_results_v100_ddp_records.json` — 91-config sweep records (per-GPU util,
-  DRAM TB, NVLink/PCIe bytes, n_params, mode/precision tags).
+- `eval_results_v100_ddp_records.json` (trial 1) + `..._trial{2..10}_records.json`
+  — the 10-trial sweep records (per-GPU util, DRAM TB, NVLink/PCIe bytes,
+  n_params, mode/precision tags), collected by `run_trials.py`.
+- `analyze_trials.py` — 10-trial generalization analysis (200 calibrate/evaluate
+  splits × random trace) + input ablation; `trials_cv_results.json` = raw errors.
+- `writeup/fig_trials_cv_error.png` — held-out estimate vs truth over the splits.
+- `writeup/fig_trials_ablation.png` — input ablation (1/2/3 signals) error CDF.
+- `writeup/fig_trials_per_workload.png` — per-workload median held-out error.
 - `writeup/fig_ddp_nvlink.png` — NVLink/step vs 4× grad-bytes prediction.
 - `writeup/fig_ddp_est_vs_truth.png` — held-out estimated vs true TFLOPs.
-- `power_calibration/nvlink_monitor.py` (Task 1), `refit_ddp.py` (refit).
-- fp16-DDP constants pasted into `detect_flops.py`; fp32 single-GPU kept as
-  labeled legacy.
+- `power_calibration/nvlink_monitor.py` (Task 1), `refit_ddp.py` (refit, now also
+  fits the 4-param model + reports the tripwire band).
+- `nvlink_tripwire_demo.py` — the adversarial demonstration.
+- `detect_flops.py`: `estimate_tflops_nvl` (4-param) + `nvlink_consistency`
+  (tripwire) + their matched constants; fp16-DDP energy constants; fp32 single-GPU
+  kept as labeled legacy.

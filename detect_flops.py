@@ -112,6 +112,36 @@ E_PER_TB_J                 = 91.571    # J per true TB — physically sane (HBM2
                                        # ~50-150 J/TB range). fp16-DDP fit; both
                                        # GPUs' DRAM traffic summed. DCGM DRAM-active
                                        # (field 1005) is a true bandwidth fraction.
+
+# NVLink / interconnect-bytes term (4-param estimator — estimate_tflops_nvl).
+# Adds a term proportional to the DDP gradient all-reduce volume (both GPUs,
+# TX+RX summed; DCGM NVLink fields 1011/1012) on top of the DRAM term. Its OWN
+# matched set (its own e_marginal / e_per_tb / p_overhead, distinct from the EMC
+# block above). Primary purpose is ADVERSARIAL: honest DDP all-reduce bytes are
+# pinned to model size, so a workload spoofing its FLOP-energy signature can't
+# also fake consistent interconnect traffic — this estimator diverges on it.
+# Fit on the fp16-DDP frontier (2026-07-23, refit_ddp.py). E_PER_NVLINK_TB_J fits
+# to 0: the all-reduce volume is ~0.89-collinear with DRAM bytes, so the energy
+# decomposition assigns the byte-energy to the DRAM term and the NVLink term adds
+# nothing to ACCURACY (4-param == 3-param, max 47.6% / mean 15.2%). NVLink's
+# robustness value is the CONSISTENCY TRIPWIRE below, not this energy term.
+POWER_OVERHEAD_NVL_W         = 0.000
+E_MARGINAL_NVL_J_PER_TFLOP   = 3.56
+E_PER_TB_NVL_J               = 91.571
+E_PER_NVLINK_TB_J            = 0.000
+
+# ── NVLink all-reduce consistency tripwire (adversarial robustness) ──────────
+# The genuinely robust use of the interconnect signal. Honest DDP training pins
+# the all-reduce volume to model size (NVLink/step = 16·n_params, measured
+# 1.00 ± 0.01× — CV 1%), so the ratio NVLink_bytes / net_energy_J stays in a
+# bounded band across the whole fp16 sweep. A workload that spoofs its FLOP-energy
+# signature breaks this: a compute-burn with no gradient sync drives the ratio
+# toward 0 (COMM_STARVED — energy without the all-reduce that real training needs);
+# an interconnect flood that inflates power drives it high (COMM_FLOOD). Either way
+# the energy→FLOP estimate is untrustworthy and gets flagged. Band = honest
+# fp16-frontier [min, max] of NVLink_bytes/J widened ~2× for margin.
+NVLINK_BYTES_PER_J_LO = 1.8e6      # honest min 3.68e6 / 2
+NVLINK_BYTES_PER_J_HI = 3.1e8      # honest max 1.53e8 × 2
 # └────────────────────────────────────────────────────────────────────────────┘
 
 # Fingerprint of the device the constants above were calibrated on. On any other
@@ -328,6 +358,70 @@ def estimate_tflops_emc(net_energy_j, active_time_s, tb_moved,
                      - e_per_tb_j * tb_moved
                      - p_overhead_w * active_time_s)
     return flop_energy_j / e_marginal_j_per_tflop
+
+
+def estimate_tflops_nvl(net_energy_j, active_time_s, tb_moved, nvlink_tb,
+                        p_overhead_w=POWER_OVERHEAD_NVL_W,
+                        e_marginal_j_per_tflop=E_MARGINAL_NVL_J_PER_TFLOP,
+                        e_per_tb_j=E_PER_TB_NVL_J,
+                        e_per_nvlink_tb_j=E_PER_NVLINK_TB_J):
+    """
+    4-parameter active-energy model — adds the inter-GPU interconnect (NVLink)
+    byte term on top of the DRAM byte term. Run in parallel with the others (A/B),
+    NOT a replacement.
+
+        TFLOPs = (E_net - e_per_tb_j*tb_moved - e_per_nvlink_tb_j*nvlink_tb
+                  - p_overhead_w*t_active) / e_marginal_j_per_tflop
+
+    `nvlink_tb` is the DDP gradient all-reduce volume (both GPUs, TX+RX summed),
+    measured by the DCGM NVLink counters. Its ADVERSARIAL purpose: the all-reduce
+    traffic of an honest DDP run is pinned to model size (~4x n_params x 4 B per
+    step; see nvlink_monitor.py, measured 1.00x the ring prediction). A workload
+    that spoofs its FLOP-energy signature (e.g. inflating power with off-line
+    memory traffic) cannot simultaneously make its interconnect bytes consistent
+    with the claimed compute — so this estimator diverges from estimate_tflops on
+    such a workload, flagging it. Like the DRAM term, e_per_nvlink is kept at
+    inference even when collinear with the DRAM term on benign data; the fit only
+    needs spread to determine it.
+
+    With nvlink_tb=0 and e_per_nvlink_tb_j=0 this reduces exactly to
+    estimate_tflops_emc. Returns TFLOPs (may be <=0 off-frontier — returned, not
+    clamped); None only for a degenerate call.
+    """
+    if active_time_s <= 0 or e_marginal_j_per_tflop <= 0:
+        return None
+    flop_energy_j = (net_energy_j
+                     - e_per_tb_j * tb_moved
+                     - e_per_nvlink_tb_j * nvlink_tb
+                     - p_overhead_w * active_time_s)
+    return flop_energy_j / e_marginal_j_per_tflop
+
+
+def nvlink_consistency(net_energy_j, nvlink_bytes,
+                       lo=NVLINK_BYTES_PER_J_LO, hi=NVLINK_BYTES_PER_J_HI):
+    """
+    Adversarial tripwire on the FLOP estimate: is the interconnect behaviour
+    consistent with honest DDP training? Honest fp16-DDP runs keep
+    NVLink_bytes / net_energy_J inside a bounded band (the all-reduce is pinned to
+    model size). Returns (verdict, ratio):
+
+      "OK"           — ratio in band; the energy→FLOP estimate is trustworthy.
+      "COMM_STARVED" — ratio below band: lots of energy, little/no all-reduce —
+                       not the gradient sync real DDP training requires (e.g. a
+                       compute-burn faking a training run). FLOP estimate suspect.
+      "COMM_FLOOD"   — ratio above band: interconnect traffic disproportionate to
+                       energy — a possible power/energy spoof. FLOP estimate suspect.
+
+    net_energy_j<=0 → "OK" (no active workload to judge).
+    """
+    if net_energy_j <= 0:
+        return "OK", None
+    ratio = nvlink_bytes / net_energy_j
+    if ratio < lo:
+        return "COMM_STARVED", ratio
+    if ratio > hi:
+        return "COMM_FLOOD", ratio
+    return "OK", ratio
 
 
 def _tflops_delta(net_energy_delta_j, dt_sec, tb_delta,

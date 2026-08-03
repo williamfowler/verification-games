@@ -311,6 +311,43 @@ def _fit_linear_at(E, t, gt, tb, p):
     return (m, 0.0) if m is not None else None
 
 
+def _linear3_at(E, t, gt, tb, nvl, p):
+    """
+    Relative-LS-optimal (e_marginal, e_per_tb, e_per_nvl) for a FIXED p_overhead,
+    from  min Σ((E_i - a*gt_i - c1*tb_i - c2*nvl_i - p*t_i)/gt_i)²  — the 1/gt²
+    relative weighting of the other fits, generalized to three linear coefficients
+    (numpy least squares on the 1/gt-weighted system). The two byte coefficients
+    are non-physical if negative, so a negative one is clamped to 0 and the rest
+    refit via the 2-/1-coefficient solves. Returns (a, c1, c2), or None if even the
+    single-coefficient fit is degenerate or a<=0.
+    """
+    y = (E - p * t) / gt
+    A = np.column_stack([np.ones_like(gt, dtype=float), tb / gt, nvl / gt])
+    try:
+        beta, *_ = np.linalg.lstsq(A, y, rcond=None)
+    except np.linalg.LinAlgError:
+        beta = None
+    if beta is not None:
+        a, c1, c2 = float(beta[0]), float(beta[1]), float(beta[2])
+        if a > 0 and c1 >= 0 and c2 >= 0:
+            return a, c1, c2
+        if c1 < 0 and c2 < 0:
+            m = _e_marginal_at(E, t, gt, p)
+            return (m, 0.0, 0.0) if m is not None else None
+        if c1 < 0:                              # keep the NVLink term only
+            r = _linear2_at(E, t, gt, nvl, p)   # -> (a, c2)
+            return (r[0], 0.0, r[1]) if r is not None else None
+        if c2 < 0:                              # keep the DRAM term only (== EMC)
+            r = _linear2_at(E, t, gt, tb, p)    # -> (a, c1)
+            return (r[0], r[1], 0.0) if r is not None else None
+    # a<=0 (or lstsq failed): fall back to EMC, then plain
+    r = _linear2_at(E, t, gt, tb, p)
+    if r is not None:
+        return (r[0], r[1], 0.0)
+    m = _e_marginal_at(E, t, gt, p)
+    return (m, 0.0, 0.0) if m is not None else None
+
+
 def fit_active_energy_emc_model(records):
     """
     Fit E_net = e_marginal*TFLOPs + e_per_tb*TB_moved + p_overhead*t_active.
@@ -343,6 +380,41 @@ def fit_active_energy_emc_model(records):
                                       loo_min_n=5)
     a, c = _fit_linear_at(E, t, gt, tb, p_overhead)
     return a, c, p_overhead
+
+
+def fit_active_energy_nvl_model(records):
+    """
+    Fit E_net = e_marginal*TFLOPs + e_per_tb*TB_moved
+                + e_per_nvl*NVLink_TB + p_overhead*t_active.
+
+    Same LOO-over-p_overhead structure as the 2-/3-param fits; the inner step
+    solves THREE linear coefficients via _linear3_at. The NVLink term (DDP
+    all-reduce volume, both GPUs summed) is highly collinear with the DRAM term on
+    benign data, so the 3-coefficient solve often clamps one to 0 — that is fine:
+    like the DRAM term, e_per_nvl is kept at inference by design (its value is
+    adversarial, flagging interconnect/energy inconsistency, not accuracy).
+
+    `records`: dicts with net_energy_j, duration_s, ground_truth_tf, tb_moved,
+    nvlink_total_bytes. Returns (e_marginal, e_per_tb, e_per_nvl, p_overhead).
+    """
+    gt = np.array([r["ground_truth_tf"] for r in records])
+    E  = np.array([r["net_energy_j"] for r in records])
+    t  = np.array([r["duration_s"] for r in records])
+    tb = np.array([r["tb_moved"] for r in records])
+    nv = np.array([r["nvlink_total_bytes"] / 1e12 for r in records])   # bytes -> TB
+
+    def solve_at(sel, p):
+        return _linear3_at(E[sel], t[sel], gt[sel], tb[sel], nv[sel], p)
+
+    def predict_at(fit, sel, p):
+        a, c1, c2 = fit
+        return (E[sel] - c1 * tb[sel] - c2 * nv[sel] - p * t[sel]) / a
+
+    # LOO needs n-1 >= 5 points to fit 3 linear params + score; n>=6.
+    p_overhead = _best_p_overhead_loo(len(gt), gt, solve_at, predict_at,
+                                      loo_min_n=6)
+    a, c1, c2 = _linear3_at(E, t, gt, tb, nv, p_overhead)
+    return a, c1, c2, p_overhead
 
 
 def emc_fit_diagnostics(records):
@@ -388,6 +460,24 @@ def score_emc(records, e_marginal, e_per_tb, p_overhead):
         r["est_tflops_emc"] = est
         gt = r["ground_truth_tf"]
         r["err_pct_emc"] = (abs(est - gt) / gt * 100.0
+                            if est is not None and gt else None)
+    return records
+
+
+def score_nvl(records, e_marginal, e_per_tb, e_per_nvl, p_overhead):
+    """Attach est_tflops_nvl / err_pct_nvl via the production 4-param estimator."""
+    for r in records:
+        tb = r.get("tb_moved")
+        nv = r.get("nvlink_total_bytes")
+        est = (detect_flops.estimate_tflops_nvl(
+                   r["net_energy_j"], r["duration_s"], tb,
+                   (nv / 1e12 if nv is not None else 0.0),
+                   p_overhead_w=p_overhead, e_marginal_j_per_tflop=e_marginal,
+                   e_per_tb_j=e_per_tb, e_per_nvlink_tb_j=e_per_nvl)
+               if tb is not None and nv is not None else None)
+        r["est_tflops_nvl"] = est
+        gt = r["ground_truth_tf"]
+        r["err_pct_nvl"] = (abs(est - gt) / gt * 100.0
                             if est is not None and gt else None)
     return records
 
