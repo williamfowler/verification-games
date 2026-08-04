@@ -113,7 +113,21 @@ def require_torchrun():
 
 def run_training(steps, batch_size, seq_len, d_model,
                  num_layers=6, nhead=8, dim_feedforward=4096,
-                 precision="fp16", optimizer_name="adamw"):
+                 precision="fp16", optimizer_name="adamw",
+                 step_callback=None, loop_ctx=None):
+    """Train `steps` and print the honest ground-truth FLOP total.
+
+    step_callback / loop_ctx are the ONLY red-team interposition points (Phase II);
+    both default to no-ops, so the benign path is byte-for-byte unchanged (asserted
+    by red_team/adversarial_workload.py --strategy none against this script):
+      * loop_ctx(device)  -> a context manager wrapping the whole timed loop, so a
+        strategy can run concurrent decoy traffic that lands inside the sampling
+        window (it opens after the 'Starting workload' print).
+      * step_callback(step, device)  -> called after each step's synchronize, so a
+        strategy can insert idle gaps (workload splitting) or micro-sleeps
+        (sub-gate throttling). It NEVER touches the model/optimizer, so ground
+        truth — computed from op shapes × steps × world_size — is unaffected.
+    """
     if not torch.cuda.is_available():
         raise RuntimeError("No CUDA device found.")
 
@@ -179,25 +193,30 @@ def run_training(steps, batch_size, seq_len, d_model,
         t_start          = time.time()
         cumulative_flops = 0
 
-        for step in range(steps):
-            x = torch.randn(batch_size, seq_len, d_model, device=device)
-            with autocast_ctx(precision):
-                loss = model(x).mean()
-            scaler.scale(loss).backward()   # DDP all-reduces grads here, over NVLink
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad(set_to_none=True)
-            torch.cuda.synchronize()
+        loop_context = loop_ctx(device) if loop_ctx is not None else contextlib.nullcontext()
+        with loop_context:
+            for step in range(steps):
+                x = torch.randn(batch_size, seq_len, d_model, device=device)
+                with autocast_ctx(precision):
+                    loss = model(x).mean()
+                scaler.scale(loss).backward()   # DDP all-reduces grads here, over NVLink
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+                torch.cuda.synchronize()
 
-            cumulative_flops += (flops_per_step or 0) * world_size
+                cumulative_flops += (flops_per_step or 0) * world_size
 
-            if rank == 0 and step % 10 == 0:
-                elapsed = time.time() - t_start
-                flop_str = f"  |  {cumulative_flops/1e12:.4f} TFLOPs" if flops_per_step else ""
-                log(f"  step {step:>4d}/{steps}"
-                    f"  |  {(step+1)/elapsed:.2f} steps/s"
-                    f"  |  {elapsed:.1f}s elapsed"
-                    f"{flop_str}")
+                if rank == 0 and step % 10 == 0:
+                    elapsed = time.time() - t_start
+                    flop_str = f"  |  {cumulative_flops/1e12:.4f} TFLOPs" if flops_per_step else ""
+                    log(f"  step {step:>4d}/{steps}"
+                        f"  |  {(step+1)/elapsed:.2f} steps/s"
+                        f"  |  {elapsed:.1f}s elapsed"
+                        f"{flop_str}")
+
+                if step_callback is not None:
+                    step_callback(step, device)
 
         torch.cuda.synchronize()
         total_time = time.time() - t_start

@@ -1,0 +1,32 @@
+{
+ "label": "live_throttle",
+ "strategy": "throttle",
+ "group": "B",
+ "returncode": 0,
+ "ground_truth_tf": 402.9753,
+ "n_sessions": 1,
+ "n_frontier_sessions": 1,
+ "attributable_frontier_tf": 0,
+ "attributable_all_tf": 0,
+ "max_session_tf": 0,
+ "sessions": [
+  {
+   "start_time": "2026-08-03T22:05:20",
+   "end_time": "2026-08-03T22:06:50",
+   "duration_sec": 90.15614352600824,
+   "power_est_tflops": 0.0,
+   "power_est_tflops_emc": -74.56664868990582,
+   "peak_gpu_util": 100.0,
+   "poll_count": 52,
+   "net_energy_j": 0.0
+  }
+ ],
+ "config": {
+  "strategy": "throttle",
+  "chunk_steps": 100,
+  "gap_seconds": 6.0,
+  "target_util": 65.0,
+  "steps": 150,
+  "d_model": 768
+ }
+}

@@ -1,0 +1,62 @@
+{
+ "label": "live_split",
+ "strategy": "split",
+ "group": "B",
+ "returncode": 0,
+ "ground_truth_tf": 537.3004,
+ "n_sessions": 4,
+ "n_frontier_sessions": 4,
+ "attributable_frontier_tf": 0,
+ "attributable_all_tf": 0,
+ "max_session_tf": 0,
+ "sessions": [
+  {
+   "start_time": "2026-08-03T22:03:25",
+   "end_time": "2026-08-03T22:03:46",
+   "duration_sec": 21.810437271007686,
+   "power_est_tflops": 0.0,
+   "power_est_tflops_emc": -24.813875966991954,
+   "peak_gpu_util": 100.0,
+   "poll_count": 12,
+   "net_energy_j": 0.0
+  },
+  {
+   "start_time": "2026-08-03T22:03:51",
+   "end_time": "2026-08-03T22:04:11",
+   "duration_sec": 20.325241475002258,
+   "power_est_tflops": 0.0,
+   "power_est_tflops_emc": -24.02231725775266,
+   "peak_gpu_util": 100.0,
+   "poll_count": 11,
+   "net_energy_j": 0.0
+  },
+  {
+   "start_time": "2026-08-03T22:04:16",
+   "end_time": "2026-08-03T22:04:38",
+   "duration_sec": 21.863858971002628,
+   "power_est_tflops": 0.0,
+   "power_est_tflops_emc": -25.775092453024357,
+   "peak_gpu_util": 100.0,
+   "poll_count": 12,
+   "net_energy_j": 0.0
+  },
+  {
+   "start_time": "2026-08-03T22:04:41",
+   "end_time": "2026-08-03T22:05:03",
+   "duration_sec": 21.891275351998047,
+   "power_est_tflops": 0.0,
+   "power_est_tflops_emc": -26.07864211584469,
+   "peak_gpu_util": 100.0,
+   "poll_count": 12,
+   "net_energy_j": 0.0
+  }
+ ],
+ "config": {
+  "strategy": "split",
+  "chunk_steps": 50,
+  "gap_seconds": 6.0,
+  "target_util": 70.0,
+  "steps": 200,
+  "d_model": 768
+ }
+}

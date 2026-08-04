@@ -1,0 +1,30 @@
+### none baseline
+=== RESULT ===
+  honest GT (2-GPU aggregate) : 537.3004
+  daemon sessions detected    : 1 (1 cleared the 80% gate)
+    session 0: dur 83s  peak_util 100%  est 186 TF  [frontier]
+  attributable (frontier only): 186 TF
+  largest single session      : 186 TF
+
+wrote red_team/live_none.json
+### split
+  honest GT (2-GPU aggregate) : 537.3004
+  daemon sessions detected    : 4 (4 cleared the 80% gate)
+    session 0: dur 22s  peak_util 100%  est 0 TF  [frontier]
+    session 1: dur 20s  peak_util 100%  est 0 TF  [frontier]
+    session 2: dur 22s  peak_util 100%  est 0 TF  [frontier]
+    session 3: dur 22s  peak_util 100%  est 0 TF  [frontier]
+  attributable (frontier only): 0 TF
+  largest single session      : 0 TF
+
+wrote red_team/live_split.json
+### throttle
+=== RESULT ===
+  honest GT (2-GPU aggregate) : 402.9753
+  daemon sessions detected    : 1 (1 cleared the 80% gate)
+    session 0: dur 90s  peak_util 100%  est 0 TF  [frontier]
+  attributable (frontier only): 0 TF
+  largest single session      : 0 TF
+
+wrote red_team/live_throttle.json
+### GROUP B DONE

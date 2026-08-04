@@ -294,8 +294,15 @@ def compute_net_energy(power_samples, idle_baseline_mw):
 
 def _torchrun_cmd(config, gpu_indices):
     nproc = len(gpu_indices)
+    # Workload-override hook (Phase II red team): a config may point at a different
+    # entry script and append strategy-specific flags. The core shape args
+    # (steps/batch/seq/d_model + optional geometry) are still injected so the
+    # step-rate auto-sizer keeps working (it only rewrites config["steps"]); the
+    # extra "args" carry things the benign flag set doesn't know about
+    # (--strategy, --decoy-gbps, --gap-seconds, ...). Default = benign path.
+    script = config.get("script", WORKLOAD_SCRIPT)
     cmd = [find_venv_torchrun(), "--standalone", f"--nproc_per_node={nproc}",
-           WORKLOAD_SCRIPT,
+           script,
            "--steps",      str(config["steps"]),
            "--batch-size", str(config["batch_size"]),
            "--seq-len",    str(config["seq_len"]),
@@ -305,6 +312,7 @@ def _torchrun_cmd(config, gpu_indices):
                       ("precision", "--precision"), ("optimizer", "--optimizer")):
         if key in config:
             cmd += [flag, str(config[key])]
+    cmd += [str(a) for a in config.get("args", [])]
     return cmd
 
 

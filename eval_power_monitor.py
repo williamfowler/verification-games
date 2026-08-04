@@ -164,7 +164,20 @@ TRAIN_FRACTION        = 2.0 / 3.0
 TARGET_ERR_PCT        = 10.0
 
 
+def load_configs_module(spec):
+    """Import a config list from 'package.module:ATTR' (Phase II --configs-module).
+    Defaults ATTR to CONFIGS when ':' is omitted."""
+    import importlib
+    mod_name, _, attr = spec.partition(":")
+    mod = importlib.import_module(mod_name)
+    return getattr(mod, attr or "CONFIGS")
+
+
 def config_label(cfg):
+    # Explicit override (Phase II red configs: same shape, different attack knobs
+    # — e.g. a decoy-bandwidth sweep — would otherwise collide on the shape label).
+    if cfg.get("label"):
+        return cfg["label"]
     label = (f"d{cfg['d_model']}_b{cfg['batch_size']}"
              f"_s{cfg['seq_len']}_L{cfg['num_layers']}")
     # Non-default axes appear as suffixes so labels stay unique + greppable.
@@ -1275,13 +1288,15 @@ def write_report(train, test, frontier, sub_frontier, all_records,
         w("RAW RECORDS  (label split net_J t_s gt_TFLOPs avg_net_W avg_gpu% avg_emc% tb_TB)")
         w("-" * 82)
         for r in sorted(all_records, key=lambda r: r["label"]):
-            anw = f"{r['avg_net_power_w']:.4f}" if r["avg_net_power_w"] is not None else "NA"
-            gpu = f"{r['avg_gpu_pct']:.1f}" if r["avg_gpu_pct"] is not None else "NA"
-            emc = f"{r['avg_emc_pct']:.1f}" if r["avg_emc_pct"] is not None else "NA"
+            # .get() throughout: excluded records (OOM / sizing-failed) carry only
+            # a minimal field set, so a full sweep with any exclusion must not KeyError.
+            anw = f"{r['avg_net_power_w']:.4f}" if r.get("avg_net_power_w") is not None else "NA"
+            gpu = f"{r['avg_gpu_pct']:.1f}" if r.get("avg_gpu_pct") is not None else "NA"
+            emc = f"{r['avg_emc_pct']:.1f}" if r.get("avg_emc_pct") is not None else "NA"
             tb  = f"{r['tb_moved']:.4f}" if r.get("tb_moved") is not None else "NA"
-            gt  = f"{r['ground_truth_tf']:.6f}" if r["ground_truth_tf"] is not None else "NA"
-            net = r["net_energy_j"] if r["net_energy_j"] is not None else float("nan")
-            dur = r["duration_s"] if r["duration_s"] is not None else float("nan")
+            gt  = f"{r['ground_truth_tf']:.6f}" if r.get("ground_truth_tf") is not None else "NA"
+            net = r["net_energy_j"] if r.get("net_energy_j") is not None else float("nan")
+            dur = r["duration_s"] if r.get("duration_s") is not None else float("nan")
             w(f"  {r['label']:<18} {r['split']:<5} {net:>9.3f}"
               f" {dur:>7.1f} {gt:>11} {anw:>9} {gpu:>6} {emc:>6} {tb:>8}")
 
@@ -1310,8 +1325,14 @@ def run_sweep_session(args):
     records_json = (args.records_json
                     or os.path.splitext(args.output)[0] + "_records.json")
 
-    # ── Pool filter (precision subset) ────────────────────────────────────
+    # ── Config source (Phase II red-team indirection) ─────────────────────
+    # Default = the built-in Phase I CONFIGS. --configs-module "pkg.mod:ATTR"
+    # swaps in another list (e.g. red_team.redteam_configs:RED_CONFIGS) so the
+    # adversarial sweep reuses this whole sampling/dump path unchanged.
     configs = CONFIGS
+    if getattr(args, "configs_module", None):
+        configs = load_configs_module(args.configs_module)
+        print(f"Configs: {args.configs_module} — {len(configs)} entries")
     if args.pool in ("fp16", "fp32"):
         configs = [c for c in CONFIGS if c.get("precision", "fp16") == args.pool]
         print(f"Pool: {args.pool}-only — {len(configs)} of {len(CONFIGS)} configs")
@@ -1389,6 +1410,10 @@ def main():
                              " (JSON dump or report with RAW RECORDS); errors are"
                              " leave-one-out within each trial's fp32 frontier pool."
                              f" Writes to --output (default {DEFAULT_BIAS_OUTPUT})")
+    parser.add_argument("--configs-module", default=None, metavar="MOD:ATTR",
+                        help="import the workload list from another module instead"
+                             " of the built-in CONFIGS, e.g."
+                             " red_team.redteam_configs:RED_CONFIGS (Phase II)")
     parser.add_argument("--pool", default="all", choices=["all", "fp16", "fp32"],
                         help="Which CONFIGS to sweep by precision: 'fp16' (the "
                              "DDP regime), 'fp32' (family-G contrast twins), or "

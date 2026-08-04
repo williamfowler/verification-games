@@ -1,0 +1,430 @@
+nvidia-smi power/util OK (GPUs [0, 1]).
+DCGM DRAM-active (field 1005) OK.
+DCGM NVLink/PCIe (fields 1009-1012) OK.
+Configs: red_team.redteam_configs:RED_CONFIGS — 16 entries
+
+Measuring single idle baseline (90s). Ensure no GPU workloads are running.
+  [baseline] sampling idle for 90s ...
+  [baseline] 163 samples  |  median 108520.0 mW  stdev 484.1 mW (both GPUs)
+Idle baseline: 108520.0 mW (both GPUs)  (n=163, stdev=484.1 mW)  — shared by ALL workloads
+
+[1/16] S1_d1024_b16_s512_L12_fp32  (fam S1)  sizing...
+  sized: 0.11 steps/s -> steps=40  (~364s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp32 --optimizer adamw
+W0803 22:14:39.727000 22666 torch/distributed/run.py:766] 
+W0803 22:14:39.727000 22666 torch/distributed/run.py:766] *****************************************
+W0803 22:14:39.727000 22666 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 22:14:39.727000 22666 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp32, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.11 steps/s  |  9.4s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.09 steps/s  |  125.7s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.07 steps/s  |  304.0s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.06 steps/s  |  490.4s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 658.2s (0.06 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 0.9897 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 14031 J  | 660s  | gpu 100/100%  | NVLink 2430MB/step  | FRONTIER
+
+[2/16] S1_d1024_b16_s256_L6_fp32  (fam S1)  sizing...
+  sized: 0.23 steps/s -> steps=40  (~174s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 256 --d-model 1024 --num-layers 6 --nhead 8 --dim-feedforward 4096 --precision fp32 --optimizer adamw
+W0803 22:28:31.098000 26584 torch/distributed/run.py:766] 
+W0803 22:28:31.098000 26584 torch/distributed/run.py:766] *****************************************
+W0803 22:28:31.098000 26584 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 22:28:31.098000 26584 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=256, d_model=1024, layers=6, nhead=8, ff=4096, precision=fp32, opt=adamw
+[redteam] Params : 76626944 (76.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 1945.620 GFLOPs
+[redteam] Ground truth total    : 155.6496 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.22 steps/s  |  4.5s elapsed  |  3.8912 TFLOPs
+  step   10/40  |  0.23 steps/s  |  48.8s elapsed  |  42.8036 TFLOPs
+  step   20/40  |  0.23 steps/s  |  93.2s elapsed  |  81.7160 TFLOPs
+  step   30/40  |  0.23 steps/s  |  137.5s elapsed  |  120.6285 TFLOPs
+
+[redteam] Done. 40 steps in 177.4s (0.23 steps/s)
+[redteam] Ground truth total : 155.6496 TFLOPs
+[redteam] Ground truth rate  : 0.8771 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 155.65 TFLOPs  | net 3337 J  | 179s  | gpu 99/99%  | NVLink 1222MB/step  | FRONTIER
+
+[3/16] S1_d1536_b16_s512_L6_fp32  (fam S1)  sizing...
+  sized: 0.05 steps/s -> steps=40  (~800s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1536 --num-layers 6 --nhead 12 --dim-feedforward 6144 --precision fp32 --optimizer adamw
+W0803 22:42:05.892000 28865 torch/distributed/run.py:766] 
+W0803 22:42:05.892000 28865 torch/distributed/run.py:766] *****************************************
+W0803 22:42:05.892000 28865 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 22:42:05.892000 28865 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1536, layers=6, nhead=12, ff=6144, precision=fp32, opt=adamw
+[redteam] Params : 172349952 (172.3M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8890.582 GFLOPs
+[redteam] Ground truth total    : 711.2466 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.05 steps/s  |  19.5s elapsed  |  17.7812 TFLOPs
+  step   10/40  |  0.05 steps/s  |  227.9s elapsed  |  195.5928 TFLOPs
+  step   20/40  |  0.05 steps/s  |  442.8s elapsed  |  373.4045 TFLOPs
+  step   30/40  |  0.05 steps/s  |  660.7s elapsed  |  551.2161 TFLOPs
+
+[redteam] Done. 40 steps in 853.5s (0.05 steps/s)
+[redteam] Ground truth total : 711.2466 TFLOPs
+[redteam] Ground truth rate  : 0.8333 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 711.25 TFLOPs  | net 15768 J  | 855s  | gpu 100/100%  | NVLink 2759MB/step  | FRONTIER
+
+[4/16] S1_d768_b8_s512_L12_fp32  (fam S1)  sizing...
+  sized: 0.17 steps/s -> steps=40  (~235s active)
+  Launching: torchrun x2  --steps 40 --batch-size 8 --seq-len 512 --d-model 768 --num-layers 12 --nhead 12 --dim-feedforward 3072 --precision fp32 --optimizer adamw
+W0803 23:00:18.664000 34018 torch/distributed/run.py:766] 
+W0803 23:00:18.664000 34018 torch/distributed/run.py:766] *****************************************
+W0803 23:00:18.664000 34018 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 23:00:18.664000 34018 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=8, global_batch=16, seq=512, d_model=768, layers=12, nhead=12, ff=3072, precision=fp32, opt=adamw
+[redteam] Params : 85645056 (85.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 2357.937 GFLOPs
+[redteam] Ground truth total    : 188.6350 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.17 steps/s  |  5.9s elapsed  |  4.7159 TFLOPs
+  step   10/40  |  0.17 steps/s  |  65.6s elapsed  |  51.8746 TFLOPs
+  step   20/40  |  0.17 steps/s  |  126.9s elapsed  |  99.0334 TFLOPs
+  step   30/40  |  0.16 steps/s  |  188.9s elapsed  |  146.1921 TFLOPs
+
+[redteam] Done. 40 steps in 245.5s (0.16 steps/s)
+[redteam] Ground truth total : 188.6350 TFLOPs
+[redteam] Ground truth rate  : 0.7683 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 188.63 TFLOPs  | net 4556 J  | 247s  | gpu 100/99%  | NVLink 1368MB/step  | FRONTIER
+
+[5/16] S3_wideFFN_d768_ff16384  (fam S3)  sizing...
+  sized: 0.23 steps/s -> steps=40  (~174s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 768 --num-layers 6 --nhead 8 --dim-feedforward 16384 --precision fp16 --optimizer adamw
+W0803 23:07:07.914000 35768 torch/distributed/run.py:766] 
+W0803 23:07:07.914000 35768 torch/distributed/run.py:766] *****************************************
+W0803 23:07:07.914000 35768 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 23:07:07.914000 35768 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=768, layers=6, nhead=8, ff=16384, precision=fp16, opt=adamw
+[redteam] Params : 165881088 (165.9M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8388.071 GFLOPs
+[redteam] Ground truth total    : 671.0457 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.27 steps/s  |  3.7s elapsed  |  16.7761 TFLOPs
+  step   10/40  |  0.23 steps/s  |  48.3s elapsed  |  184.5376 TFLOPs
+  step   20/40  |  0.22 steps/s  |  94.6s elapsed  |  352.2990 TFLOPs
+  step   30/40  |  0.22 steps/s  |  139.0s elapsed  |  520.0604 TFLOPs
+
+[redteam] Done. 40 steps in 183.9s (0.22 steps/s)
+[redteam] Ground truth total : 671.0457 TFLOPs
+[redteam] Ground truth rate  : 3.6495 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 671.05 TFLOPs  | net 3503 J  | 186s  | gpu 99/99%  | NVLink 2632MB/step  | FRONTIER
+
+[6/16] S3_longseq_d512_s8192  (fam S3)  sizing...
+  sized: 0.10 steps/s -> steps=40  (~400s active)
+  Launching: torchrun x2  --steps 40 --batch-size 2 --seq-len 8192 --d-model 512 --num-layers 6 --nhead 8 --dim-feedforward 2048 --precision fp16 --optimizer adamw
+W0803 23:16:05.122000 37548 torch/distributed/run.py:766] 
+W0803 23:16:05.122000 37548 torch/distributed/run.py:766] *****************************************
+W0803 23:16:05.122000 37548 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 23:16:05.122000 37548 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=2, global_batch=4, seq=8192, d_model=512, layers=6, nhead=8, ff=2048, precision=fp16, opt=adamw
+[redteam] Params : 19176960 (19.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 7627.862 GFLOPs
+[redteam] Ground truth total    : 610.2290 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.10 steps/s  |  10.4s elapsed  |  15.2557 TFLOPs
+  step   10/40  |  0.10 steps/s  |  114.4s elapsed  |  167.8130 TFLOPs
+  step   20/40  |  0.10 steps/s  |  211.5s elapsed  |  320.3702 TFLOPs
+  step   30/40  |  0.10 steps/s  |  305.4s elapsed  |  472.9274 TFLOPs
+
+[redteam] Done. 40 steps in 389.2s (0.10 steps/s)
+[redteam] Ground truth total : 610.2290 TFLOPs
+[redteam] Ground truth rate  : 1.5681 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 610.23 TFLOPs  | net 6068 J  | 391s  | gpu 100/100%  | NVLink 306MB/step  | FRONTIER
+
+[7/16] S3_widemodel_d3072  (fam S3)  sizing...
+  WARNING: S3_widemodel_d3072 OOM — excluded
+
+[8/16] S3_manyheads_d1024_h64  (fam S3)  sizing...
+  sized: 0.15 steps/s -> steps=40  (~267s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 64 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0803 23:27:00.419000 40317 torch/distributed/run.py:766] 
+W0803 23:27:00.419000 40317 torch/distributed/run.py:766] *****************************************
+W0803 23:27:00.419000 40317 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 23:27:00.419000 40317 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=64, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.16 steps/s  |  6.1s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.15 steps/s  |  75.2s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.14 steps/s  |  146.6s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.14 steps/s  |  217.3s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 281.3s (0.14 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 2.3160 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 4561 J  | 283s  | gpu 100/100%  | NVLink 2428MB/step  | FRONTIER
+
+[9/16] S3_deep_d512_L48  (fam S3)  sizing...
+  sized: 0.15 steps/s -> steps=40  (~267s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 512 --num-layers 48 --nhead 8 --dim-feedforward 2048 --precision fp16 --optimizer adamw
+W0803 23:35:41.097000 42389 torch/distributed/run.py:766] 
+W0803 23:35:41.097000 42389 torch/distributed/run.py:766] *****************************************
+W0803 23:35:41.097000 42389 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 23:35:41.097000 42389 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=512, layers=48, nhead=8, ff=2048, precision=fp16, opt=adamw
+[redteam] Params : 151577088 (151.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8864.812 GFLOPs
+[redteam] Ground truth total    : 709.1850 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.15 steps/s  |  6.6s elapsed  |  17.7296 TFLOPs
+  step   10/40  |  0.15 steps/s  |  74.3s elapsed  |  195.0259 TFLOPs
+  step   20/40  |  0.15 steps/s  |  141.8s elapsed  |  372.3221 TFLOPs
+  step   30/40  |  0.15 steps/s  |  209.3s elapsed  |  549.6184 TFLOPs
+
+[redteam] Done. 40 steps in 270.1s (0.15 steps/s)
+[redteam] Ground truth total : 709.1850 TFLOPs
+[redteam] Ground truth rate  : 2.6260 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 709.18 TFLOPs  | net 5060 J  | 271s  | gpu 100/100%  | NVLink 2426MB/step  | FRONTIER
+
+[10/16] S3_skinnyFFN_d2048_ff2048  (fam S3)  sizing...
+  sized: 0.48 steps/s -> steps=48  (~100s active)
+  Launching: torchrun x2  --steps 48 --batch-size 8 --seq-len 512 --d-model 2048 --num-layers 6 --nhead 16 --dim-feedforward 2048 --precision fp16 --optimizer adamw
+W0803 23:41:44.129000 44133 torch/distributed/run.py:766] 
+W0803 23:41:44.129000 44133 torch/distributed/run.py:766] *****************************************
+W0803 23:41:44.129000 44133 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 23:41:44.129000 44133 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=48, batch/gpu=8, global_batch=16, seq=512, d_model=2048, layers=6, nhead=16, ff=2048, precision=fp16, opt=adamw
+[redteam] Params : 155314176 (155.3M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 4071.629 GFLOPs
+[redteam] Ground truth total    : 390.8764 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/48  |  0.50 steps/s  |  2.0s elapsed  |  8.1433 TFLOPs
+  step   10/48  |  0.48 steps/s  |  22.9s elapsed  |  89.5758 TFLOPs
+  step   20/48  |  0.48 steps/s  |  43.7s elapsed  |  171.0084 TFLOPs
+  step   30/48  |  0.48 steps/s  |  64.6s elapsed  |  252.4410 TFLOPs
+  step   40/48  |  0.48 steps/s  |  85.4s elapsed  |  333.8736 TFLOPs
+
+[redteam] Done. 48 steps in 100.2s (0.48 steps/s)
+[redteam] Ground truth total : 390.8764 TFLOPs
+[redteam] Ground truth rate  : 3.9005 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 390.88 TFLOPs  | net 2239 J  | 102s  | gpu 99/99%  | NVLink 2494MB/step  | FRONTIER
+
+[11/16] S2_decoy_gbps150  (fam S2)  sizing...
+  sized: 0.07 steps/s -> steps=40  (~571s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw --strategy mem_decoy --decoy-gbps 150 --decoy-mb 256
+W0803 23:50:48.490000 45622 torch/distributed/run.py:766] 
+W0803 23:50:48.490000 45622 torch/distributed/run.py:766] *****************************************
+W0803 23:50:48.490000 45622 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0803 23:50:48.490000 45622 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = mem_decoy  (decoy_gbps=150.0 decoy_mb=256.0 allreduce=False chunk=100 gap=6.0s target_util=70.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.24 steps/s  |  4.1s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.08 steps/s  |  133.7s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.08 steps/s  |  275.0s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.07 steps/s  |  419.1s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 549.5s (0.07 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 1.1856 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 31092 J  | 551s  | gpu 100/100%  | NVLink 2430MB/step  | FRONTIER
+
+[12/16] S2_decoy_gbps300  (fam S2)  sizing...
+  sized: 0.08 steps/s -> steps=40  (~500s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw --strategy mem_decoy --decoy-gbps 300 --decoy-mb 256
+W0804 00:07:04.289000 49562 torch/distributed/run.py:766] 
+W0804 00:07:04.289000 49562 torch/distributed/run.py:766] *****************************************
+W0804 00:07:04.289000 49562 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 00:07:04.289000 49562 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = mem_decoy  (decoy_gbps=300.0 decoy_mb=256.0 allreduce=False chunk=100 gap=6.0s target_util=70.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.22 steps/s  |  4.5s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.08 steps/s  |  133.3s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.08 steps/s  |  270.8s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.08 steps/s  |  412.3s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 535.5s (0.07 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 1.2165 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 30991 J  | 537s  | gpu 100/100%  | NVLink 2438MB/step  | FRONTIER
+
+[13/16] S2_decoy_gbps600  (fam S2)  sizing...
+  sized: 0.08 steps/s -> steps=40  (~500s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw --strategy mem_decoy --decoy-gbps 600 --decoy-mb 256
+W0804 00:22:41.042000 53328 torch/distributed/run.py:766] 
+W0804 00:22:41.042000 53328 torch/distributed/run.py:766] *****************************************
+W0804 00:22:41.042000 53328 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 00:22:41.042000 53328 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = mem_decoy  (decoy_gbps=600.0 decoy_mb=256.0 allreduce=False chunk=100 gap=6.0s target_util=70.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.22 steps/s  |  4.5s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.08 steps/s  |  131.5s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.08 steps/s  |  261.1s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.08 steps/s  |  393.2s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 502.4s (0.08 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 1.2968 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 26875 J  | 504s  | gpu 100/100%  | NVLink 2435MB/step  | FRONTIER
+
+[14/16] S2_decoy_gbps1200  (fam S2)  sizing...
+  sized: 0.08 steps/s -> steps=40  (~500s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw --strategy mem_decoy --decoy-gbps 1200 --decoy-mb 256
+W0804 00:37:25.952000 56794 torch/distributed/run.py:766] 
+W0804 00:37:25.952000 56794 torch/distributed/run.py:766] *****************************************
+W0804 00:37:25.952000 56794 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 00:37:25.952000 56794 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = mem_decoy  (decoy_gbps=1200.0 decoy_mb=256.0 allreduce=False chunk=100 gap=6.0s target_util=70.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.23 steps/s  |  4.3s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.09 steps/s  |  122.1s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.08 steps/s  |  248.3s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.08 steps/s  |  372.6s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 489.1s (0.08 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 1.3319 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 26496 J  | 491s  | gpu 100/100%  | NVLink 2437MB/step  | FRONTIER
+
+[15/16] S2_nvlink_ar64  (fam S2)  sizing...
+  sized: 0.25 steps/s -> steps=40  (~160s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw --strategy mem_decoy --decoy-gbps 0 --decoy-allreduce --decoy-allreduce-mb 64
+W0804 00:48:05.143000 59761 torch/distributed/run.py:766] 
+W0804 00:48:05.143000 59761 torch/distributed/run.py:766] *****************************************
+W0804 00:48:05.143000 59761 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 00:48:05.143000 59761 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = mem_decoy  (decoy_gbps=0.0 decoy_mb=256.0 allreduce=True chunk=100 gap=6.0s target_util=70.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.25 steps/s  |  3.9s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.25 steps/s  |  44.2s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.25 steps/s  |  84.4s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.25 steps/s  |  124.6s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 160.9s (0.25 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 4.0499 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 9457 J  | 163s  | gpu 99/99%  | NVLink 2698MB/step  | FRONTIER
+
+[16/16] S2_nvlink_ar256  (fam S2)  sizing...
+  sized: 0.25 steps/s -> steps=40  (~160s active)
+  Launching: torchrun x2  --steps 40 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw --strategy mem_decoy --decoy-gbps 0 --decoy-allreduce --decoy-allreduce-mb 256
+W0804 00:53:16.626000 61069 torch/distributed/run.py:766] 
+W0804 00:53:16.626000 61069 torch/distributed/run.py:766] *****************************************
+W0804 00:53:16.626000 61069 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 00:53:16.626000 61069 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = mem_decoy  (decoy_gbps=0.0 decoy_mb=256.0 allreduce=True chunk=100 gap=6.0s target_util=70.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=40, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 651.4606 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/40  |  0.25 steps/s  |  3.9s elapsed  |  16.2865 TFLOPs
+  step   10/40  |  0.25 steps/s  |  44.5s elapsed  |  179.1517 TFLOPs
+  step   20/40  |  0.25 steps/s  |  85.1s elapsed  |  342.0168 TFLOPs
+  step   30/40  |  0.25 steps/s  |  125.7s elapsed  |  504.8820 TFLOPs
+
+[redteam] Done. 40 steps in 162.3s (0.25 steps/s)
+[redteam] Ground truth total : 651.4606 TFLOPs
+[redteam] Ground truth rate  : 4.0144 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 651.46 TFLOPs  | net 9278 J  | 163s  | gpu 100/99%  | NVLink 3513MB/step  | FRONTIER
+Records JSON written to red_team/red_results_trial1_records.json
+
+Frontier runs (util >= 80%): 15 of 15 valid
+Split: random, seed=132488671  (10 train / 5 test)
+  TRAIN: S1_d1024_b16_s256_L6_fp32, S1_d1024_b16_s512_L12_fp32, S1_d1536_b16_s512_L6_fp32, S1_d768_b8_s512_L12_fp32, S2_decoy_gbps1200, S2_decoy_gbps300, S3_deep_d512_L48, S3_longseq_d512_s8192, S3_manyheads_d1024_h64, S3_wideFFN_d768_ff16384
+  TEST : S2_decoy_gbps150, S2_decoy_gbps600, S2_nvlink_ar256, S2_nvlink_ar64, S3_skinnyFFN_d2048_ff2048
+
+Validation fit (TRAIN): E_MARGINAL=29.6920 J/TFLOP, P_OVERHEAD=0.0000 W
+Ship fit (ALL frontier): E_MARGINAL=31.9933 J/TFLOP, P_OVERHEAD=0.0000 W
+Validation fit EMC (TRAIN): E_MARGINAL=12.7426, E_PER_TB=106.4607, P_OVERHEAD=0.0000
+Ship fit EMC (ALL frontier): E_MARGINAL=12.8050, E_PER_TB=108.7770, P_OVERHEAD=0.0000
+Traceback (most recent call last):
+  File "/home/will/verification-games/eval_power_monitor.py", line 1498, in <module>
+    main()
+  File "/home/will/verification-games/eval_power_monitor.py", line 1485, in main
+    passed, test_max = write_report(train, test, frontier, sub_frontier,
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/will/verification-games/eval_power_monitor.py", line 1291, in write_report
+    anw = f"{r['avg_net_power_w']:.4f}" if r["avg_net_power_w"] is not None else "NA"
+                                           ~^^^^^^^^^^^^^^^^^^^
+KeyError: 'avg_net_power_w'

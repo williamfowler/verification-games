@@ -1,0 +1,118 @@
+==================================================================================
+eval_power_monitor.py  —  Power Estimator Accuracy Report
+Generated : 2026-08-04 00:56:11
+Estimator : detect_flops.estimate_tflops (2-param) + estimate_tflops_emc (3-param, A/B)
+Objective : relative least squares
+Baseline  : single startup median over 90s = 108520.0 mW
+Frontier  : scored on runs with avg GPU util >= 80%  (15 of 15 valid)
+Split     : random, seed=132488671  (10 train / 5 test)
+==================================================================================
+
+VALIDATION FIT  (fit on TRAIN only)
+--------------------------------------------------
+  2-param:  E_net = e_marg*TFLOPs + p_oh*t
+    E_MARGINAL_J_PER_TFLOP = 29.6920
+    POWER_OVERHEAD_W       = 0.0000
+  3-param:  E_net = e_marg*TFLOPs + e_per_tb*TB + p_oh*t
+    E_MARGINAL_J_PER_TFLOP = 12.7426
+    E_PER_TB_J             = 106.4607
+    POWER_OVERHEAD_W       = 0.0000
+
+TRAIN  (frontier; fitted on these)
+----------------------------------------------------------------------------------
+  config              gpu%  gt_TFLOPs     est_2p  err2p%    est_EMC errEMC%    tb_TB     net_J     t_s     n
+  ----------------------------------------------------------------------------------------------------------
+  S1_d1024_b16_s256_L6_fp32    99   155.6496   112.3913   27.79   227.8360   46.38   4.0756   3337.12   179.1   308
+  S1_d1024_b16_s512_L12_fp32   100   651.4606   472.5604   27.46   950.5730   45.91  18.0203  14031.27   659.7  1139
+  S1_d1536_b16_s512_L6_fp32   100   711.2466   531.0631   25.33  1093.7008   53.77  17.2053  15768.33   855.0  1485
+  S1_d768_b8_s512_L12_fp32    99   188.6350   153.4258   18.67   308.9266   63.77   5.8141   4555.52   247.2   429
+  S2_decoy_gbps1200    100   651.4606   892.3536   36.98   328.4438   49.58 209.5657  26495.77   491.1   833
+  S2_decoy_gbps300     100   651.4606  1043.7336   60.21   952.4150   46.20 177.1006  30990.54   537.2   958
+  S3_deep_d512_L48     100   709.1850   170.4076   75.97   297.8612   58.00  11.8748   5059.74   271.5   467
+  S3_longseq_d512_s8192   100   610.2290   204.3537   66.51   442.3360   27.51   4.0498   6067.67   390.9   681
+  S3_manyheads_d1024_h64   100   651.4606   153.6073   76.42   296.9635   54.42   7.2967   4560.91   282.9   489
+  S3_wideFFN_d768_ff16384    99   671.0457   117.9744   82.42   224.6757   66.52   6.0110   3502.89   185.8   325
+
+TEST   (frontier; held out — scored with the TRAIN fit)
+----------------------------------------------------------------------------------
+  config              gpu%  gt_TFLOPs     est_2p  err2p%    est_EMC errEMC%    tb_TB     net_J     t_s     n
+  ----------------------------------------------------------------------------------------------------------
+  S2_decoy_gbps150     100   651.4606  1047.1495   60.74  1541.7873  136.67 107.5093  31091.97   551.0  1002
+  S2_decoy_gbps600     100   651.4606   905.1393   38.94   341.0377   47.65 211.6243  26875.40   503.7   854
+  S2_nvlink_ar256       99   651.4606   312.4652   52.04   667.2061    2.42   7.2867   9277.72   163.5   301
+  S2_nvlink_ar64        99   651.4606   318.5121   51.11   681.0435    4.54   7.3170   9457.26   162.5   299
+  S3_skinnyFFN_d2048_ff2048    99   390.8764    75.3942   80.71   134.7116   65.54   4.9034   2238.60   101.8   177
+
+SUMMARY  (frontier only)
+--------------------------------------------------
+  2-param TRAIN : max err 82.42%   mean err 49.78%   (10 runs)
+  2-param TEST  : max err 80.71%   mean err 56.71%   (5 runs)
+  3-param TRAIN : max err 66.52%   mean err 51.21%   (10 runs)
+  3-param TEST  : max err 136.67%   mean err 51.36%   (5 runs)
+
+  [2-param] FAIL: held-out frontier max err 80.71% >= 10% target
+  [3-param] FAIL: held-out EMC max err 136.67%  (target <10% AND no regression vs 2-param)
+  [diag] corr(gt,tb)=0.275  cond(2x2)=73.7  — high values mean E_PER_TB_J is weakly determined (collinear)
+
+SHIP FIT  (refit on ALL frontier runs — the constants to deploy)
+----------------------------------------------------------------------------------
+  config              gpu%  gt_TFLOPs     est_2p  err2p%    est_EMC errEMC%    tb_TB     net_J     t_s     n
+  ----------------------------------------------------------------------------------------------------------
+  S1_d1024_b16_s256_L6_fp32    99   155.6496   104.3070   32.99   225.9896   45.19   4.0756   3337.12   179.1   308
+  S1_d1024_b16_s512_L12_fp32   100   651.4606   438.5691   32.68   942.6855   44.70  18.0203  14031.27   659.7  1139
+  S1_d1536_b16_s512_L6_fp32   100   711.2466   492.8637   30.70  1085.2638   52.59  17.2053  15768.33   855.0  1485
+  S1_d768_b8_s512_L12_fp32    99   188.6350   142.3899   24.52   306.3709   62.41   5.8141   4555.52   247.2   429
+  S2_decoy_gbps1200    100   651.4606   828.1665   27.12   288.9365   55.65 209.5657  26495.77   491.1   833
+  S2_decoy_gbps150     100   651.4606   971.8280   49.18  1514.8337  132.53 107.5093  31091.97   551.0  1002
+  S2_decoy_gbps300     100   651.4606   968.6578   48.69   915.7425   40.57 177.1006  30990.54   537.2   958
+  S2_decoy_gbps600     100   651.4606   840.0326   28.95   301.0967   53.78 211.6243  26875.40   503.7   854
+  S2_nvlink_ar256       99   651.4606   289.9896   55.49   662.6397    1.72   7.2867   9277.72   163.5   301
+  S2_nvlink_ar64        99   651.4606   295.6015   54.62   676.4043    3.83   7.3170   9457.26   162.5   299
+  S3_deep_d512_L48     100   709.1850   158.1501   77.70   294.2631   58.51  11.8748   5059.74   271.5   467
+  S3_longseq_d512_s8192   100   610.2290   189.6546   68.92   439.4499   27.99   4.0498   6067.67   390.9   681
+  S3_manyheads_d1024_h64   100   651.4606   142.5583   78.12   294.1978   54.84   7.2967   4560.91   282.9   489
+  S3_skinnyFFN_d2048_ff2048    99   390.8764    69.9710   82.10   133.1688   65.93   4.9034   2238.60   101.8   177
+  S3_wideFFN_d768_ff16384    99   671.0457   109.4885   83.68   222.4946   66.84   6.0110   3502.89   185.8   325
+
+  2-param ALL frontier: max err 83.68%   mean err 51.70%   (15 runs)
+  FAIL: every frontier run >= 10% target
+  3-param ALL frontier: max err 132.53%   mean err 51.14%   (15 runs)
+
+BY PRECISION  (ship fit is precision-blind; errors per precision)
+----------------------------------------------------------------------------------
+  fp16   n=11  2p max  83.68%  mean  59.51%   3p max 132.53%  mean  51.11%
+  fp32   n=4   2p max  32.99%  mean  30.22%   3p max  62.41%  mean  51.22%
+  [fp32-only subset] max err 83.68% — FAIL vs 10% (the pre-precision MVP scope)
+
+RECOMMENDED CONSTANTS  (paste into detect_flops.py)
+--------------------------------------------------
+  POWER_OVERHEAD_W         = 0.000
+  E_MARGINAL_J_PER_TFLOP   = 31.99
+  # 3-param (EMC) matched set — deploy together with the above only
+  # if promoting the EMC estimator; otherwise keep E_PER_TB_J = 0.0.
+  POWER_OVERHEAD_W         = 0.000   # (EMC fit)
+  E_MARGINAL_J_PER_TFLOP   = 12.80   # (EMC fit)
+  E_PER_TB_J               = 108.777
+  # Matched CALIBRATION_FINGERPRINT (paste alongside — constants
+  # are valid ONLY on this device):
+  #   device_model   : Tesla V100-SXM2-16GB
+  #   driver_version : 580.159.03
+  #   cuda_version   : 13.0
+
+RAW RECORDS  (label split net_J t_s gt_TFLOPs avg_net_W avg_gpu% avg_emc% tb_TB)
+----------------------------------------------------------------------------------
+  S1_d1024_b16_s256_L6_fp32 train  3337.123   179.1  155.649600   18.6586   99.1    1.3   4.0756
+  S1_d1024_b16_s512_L12_fp32 train 14031.265   659.7  651.460600   21.2070   99.8    1.5  18.0203
+  S1_d1536_b16_s512_L6_fp32 train 15768.327   855.0  711.246600   18.3673   99.9    1.1  17.2053
+  S1_d768_b8_s512_L12_fp32 train  4555.520   247.2  188.635000   18.3843   99.5    1.3   5.8141
+  S2_decoy_gbps1200  train 26495.765   491.1  651.460600   53.9813   99.7   23.7 209.5657
+  S2_decoy_gbps150   test  31091.968   551.0  651.460600   56.4475   99.8   10.8 107.5093
+  S2_decoy_gbps300   train 30990.543   537.2  651.460600   57.9469   99.7   18.3 177.1006
+  S2_decoy_gbps600   test  26875.399   503.7  651.460600   53.3938   99.8   23.4 211.6243
+  S2_nvlink_ar256    test   9277.718   163.5  651.460600   56.6968   99.3    2.5   7.2867
+  S2_nvlink_ar64     test   9457.264   162.5  651.460600   58.1357   99.1    2.6   7.3170
+  S3_deep_d512_L48   train  5059.742   271.5  709.185000   18.6454   99.5    2.4  11.8748
+  S3_longseq_d512_s8192 train  6067.672   390.9  610.229000   15.5191   99.7    0.6   4.0498
+  S3_manyheads_d1024_h64 train  4560.909   282.9  651.460600   16.1464   99.6    1.4   7.2967
+  S3_skinnyFFN_d2048_ff2048 test   2238.603   101.8  390.876400   22.0546   98.8    2.7   4.9034
+  S3_wideFFN_d768_ff16384 train  3502.895   185.8  671.045700   18.8912   99.3    1.8   6.0110
