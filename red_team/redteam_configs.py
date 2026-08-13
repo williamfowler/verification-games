@@ -1,113 +1,108 @@
 """
-redteam_configs.py — Group A (offline) adversarial workload sweep.
+redteam_configs.py — Phase II v3 offline adversarial configs (one variable, GT-preserving).
 
-RED_CONFIGS mirrors eval_power_monitor.CONFIGS' shape so it feeds straight through
-the existing sweep (`eval_power_monitor.py --configs-module
-red_team.redteam_configs:RED_CONFIGS`). Each entry carries a "strategy" tag and a
-unique "label"; decoy entries add a "script"/"args" override that points the run
-at adversarial_workload.py. These are Group A only — scored on the same cleanly-
-bracketed offline window as Phase I. Splitting/throttling (S4/S5) attack the live
-daemon's session logic and are NOT here (see live_daemon_probe.py).
+Every config declares a `parent` (a real benign workload) and changes exactly ONE
+variable, holding ground truth constant so any estimator change is attributable to
+that variable. Fed through the Phase I sweep unchanged:
+    eval_power_monitor.py --configs-module red_team.redteam_configs:RED_CONFIGS
 
-Strategies represented:
-  S1_precision   — fp32 twins of benign configs. On Volta fp16 is already the
-                   baseline AND the max-throughput precision, and Phase I is
-                   fp16-calibrated, so the precision *under*-report channel is
-                   closed; fp32 runs instead read HIGH. Included to quantify that
-                   precision-blindness (the honest V100 result — see README §S1).
-  S3_atypical    — out-of-distribution geometry (extreme FFN/seq ratios, nhead,
-                   very wide/narrow), where the linear energy fit extrapolates
-                   poorly. Signed error per axis is the result (reuse Phase I bias).
-  S2_mem_decoy   — concurrent DRAM decoy traffic (device-to-device copies) to
-                   inflate the tb_moved the 3-param estimator subtracts; a
-                   bandwidth sweep so the efficiency gate marks where it stops
-                   being legal.
-  S2_nvlink_decoy — [V100] extra NVLink all-reduce to inflate the interconnect
-                   signal (targets the tripwire / 4-param term; DRAM decoy off).
+All sets use `fixed_steps` (the sweep must NOT auto-size them — that would break the
+GT invariant). GT-preservation is by construction and re-checked at run time by
+red_team/test_benign_equivalence.py:
+
+  S4  batch-inflation      variable = batch_size, above the calibration range
+                           (8/16/32 → 64/128), with steps = P/batch (P constant),
+                           so batch×steps — hence per-step-FLOPs×steps×world — is
+                           identical across the set. Attacks the constant-J/FLOP
+                           assumption: bigger GEMMs run at higher tensor-core
+                           efficiency ⇒ lower J/FLOP than the fitted E_MARGINAL ⇒
+                           under-report (vs the 2-param estimator especially).
+  S3  atypical geometry    variable = nhead (d_model fixed → head_dim 1024…16) or
+                           optimizer (adamw→sgd); neither changes per-step FLOPs,
+                           so the whole set shares one fixed step count. Probes
+                           kernel-efficiency-driven energy at fixed GT (expected
+                           over-report from poor tensor-core utilisation).
+
+Retired to red_team_old/: v1 precision / mem_decoy / nvlink_decoy / GT-altering
+atypical.  Split / throttle are schedule attacks (red_team/adversarial_workload.py,
+live daemon), not offline configs.
 """
-import os
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ADV = os.path.join(REPO_ROOT, "red_team", "adversarial_workload.py")
-
-
-def _cfg(strategy, label, d_model, seq_len, batch_size, dim_feedforward,
-         num_layers, nhead, precision="fp16", optimizer="adamw",
-         family="RED", script=None, args=None):
-    c = {"family": family, "strategy": strategy, "label": label,
-         "d_model": d_model, "seq_len": seq_len, "batch_size": batch_size,
-         "dim_feedforward": dim_feedforward, "num_layers": num_layers,
-         "nhead": nhead, "precision": precision, "optimizer": optimizer}
-    if script:
-        c["script"] = script
-    if args:
-        c["args"] = args
-    return c
-
-
-def _decoy(label, strategy, decoy_args, d_model=1024, seq_len=512, batch_size=16,
-           dim_feedforward=4096, num_layers=12, nhead=8):
-    """A benign frontier base shape wrapped by adversarial_workload.py with decoy
-    args. Base is d1024_b16_s512_L12 (a Phase I frontier config), so any estimate
-    change is attributable to the decoy, not the shape."""
-    return _cfg(strategy, label, d_model, seq_len, batch_size, dim_feedforward,
-                num_layers, nhead, family="S2", script=ADV,
-                args=["--strategy", "mem_decoy"] + decoy_args)
+# ── S4 — batch inflation (matched set, GT held constant via batch×steps=P) ─────
+# P is divisible by every batch so steps are integers and GT is EXACT (no rounding).
+def batch_inflation_set(parent_label, d_model, seq_len, num_layers, nhead,
+                        dim_feedforward, batches, P, ref_batch):
+    cfgs = []
+    for b in batches:
+        assert P % b == 0, f"P={P} not divisible by batch {b} (GT would drift)"
+        steps = P // b
+        label = f"S4_{parent_label}_b{b}"
+        cfgs.append({
+            "family": "S4", "strategy": "S4_batch",
+            "label": label, "parent": f"S4_{parent_label}_b{ref_batch}",
+            "d_model": d_model, "seq_len": seq_len, "batch_size": b,
+            "num_layers": num_layers, "nhead": nhead,
+            "dim_feedforward": dim_feedforward,
+            "precision": "fp16", "optimizer": "adamw",
+            "fixed_steps": True, "steps": steps,
+        })
+    return cfgs
 
 
-# ── S1 — precision (fp32 twins of benign configs) ─────────────────────────────
-S1_CONFIGS = [
-    _cfg("S1_precision", "S1_d1024_b16_s512_L12_fp32", 1024, 512, 16, 4096, 12, 8,
-         precision="fp32", family="S1"),
-    _cfg("S1_precision", "S1_d1024_b16_s256_L6_fp32", 1024, 256, 16, 4096, 6, 8,
-         precision="fp32", family="S1"),
-    _cfg("S1_precision", "S1_d1536_b16_s512_L6_fp32", 1536, 512, 16, 6144, 6, 12,
-         precision="fp32", family="S1"),
-    _cfg("S1_precision", "S1_d768_b8_s512_L12_fp32", 768, 512, 8, 3072, 12, 12,
-         precision="fp32", family="S1"),
-]
+# ── S3 — atypical nhead / optimizer (fixed steps; nhead|d_model, GT unchanged) ─
+def atypical_set(parent_label, d_model, seq_len, batch_size, num_layers,
+                 dim_feedforward, ref_nhead, nheads, steps, add_sgd=True):
+    cfgs = []
+    for h in nheads:
+        assert d_model % h == 0, f"nhead {h} must divide d_model {d_model}"
+        cfgs.append({
+            "family": "S3", "strategy": "S3_atypical",
+            "label": f"S3_{parent_label}_h{h}", "parent": f"S3_{parent_label}_h{ref_nhead}",
+            "d_model": d_model, "seq_len": seq_len, "batch_size": batch_size,
+            "num_layers": num_layers, "nhead": h, "dim_feedforward": dim_feedforward,
+            "precision": "fp16", "optimizer": "adamw", "fixed_steps": True, "steps": steps,
+        })
+    if add_sgd:
+        cfgs.append({
+            "family": "S3", "strategy": "S3_atypical",
+            "label": f"S3_{parent_label}_sgd", "parent": f"S3_{parent_label}_h{ref_nhead}",
+            "d_model": d_model, "seq_len": seq_len, "batch_size": batch_size,
+            "num_layers": num_layers, "nhead": ref_nhead, "dim_feedforward": dim_feedforward,
+            "precision": "fp16", "optimizer": "sgd", "fixed_steps": True, "steps": steps,
+        })
+    return cfgs
 
-# ── S3 — atypical / out-of-distribution hyperparameters ───────────────────────
-# Each pushes an axis past the Phase I sweep's range (d≤2048, seq≤4096, nhead≤32,
-# ff≤12288·8×d, layers≤32) so the fit must extrapolate.
-S3_CONFIGS = [
-    _cfg("S3_atypical", "S3_wideFFN_d768_ff16384", 768, 512, 16, 16384, 6, 8,
-         family="S3"),                                   # ff/d = 21× (Phase I ≤8×)
-    _cfg("S3_atypical", "S3_longseq_d512_s8192", 512, 8192, 2, 2048, 6, 8,
-         family="S3"),                                   # seq 8192 (Phase I ≤4096)
-    _cfg("S3_atypical", "S3_widemodel_d3072", 3072, 256, 8, 12288, 6, 24,
-         family="S3"),                                   # d_model 3072 (≤2048)
-    _cfg("S3_atypical", "S3_manyheads_d1024_h64", 1024, 512, 16, 4096, 12, 64,
-         family="S3"),                                   # head_dim 16 (nhead≤32)
-    _cfg("S3_atypical", "S3_deep_d512_L48", 512, 512, 16, 2048, 48, 8,
-         family="S3"),                                   # 48 layers (≤32)
-    _cfg("S3_atypical", "S3_skinnyFFN_d2048_ff2048", 2048, 512, 8, 2048, 6, 16,
-         family="S3"),                                   # ff/d = 1× (very compute-light FFN)
-]
 
-# ── S2 — memory / interconnect decoy (bandwidth + all-reduce sweeps) ──────────
-S2_CONFIGS = [
-    _decoy("S2_decoy_gbps150",  "S2_mem_decoy", ["--decoy-gbps", "150",  "--decoy-mb", "256"]),
-    _decoy("S2_decoy_gbps300",  "S2_mem_decoy", ["--decoy-gbps", "300",  "--decoy-mb", "256"]),
-    _decoy("S2_decoy_gbps600",  "S2_mem_decoy", ["--decoy-gbps", "600",  "--decoy-mb", "256"]),
-    _decoy("S2_decoy_gbps1200", "S2_mem_decoy", ["--decoy-gbps", "1200", "--decoy-mb", "256"]),
-    # [V100] NVLink-only decoy (DRAM decoy off via --decoy-gbps 0): targets the
-    # interconnect term / consistency tripwire, not the DRAM subtraction.
-    _decoy("S2_nvlink_ar64",  "S2_nvlink_decoy",
-           ["--decoy-gbps", "0", "--decoy-allreduce", "--decoy-allreduce-mb", "64"]),
-    _decoy("S2_nvlink_ar256", "S2_nvlink_decoy",
-           ["--decoy-gbps", "0", "--decoy-allreduce", "--decoy-allreduce-mb", "256"]),
-]
+# S4 parent: A:d1024_s256_b8_L6 (a low-batch family-A config with memory headroom
+# to grow batch to 128). P=15360 (=128×120) so batch 8→128 gives steps
+# 1920/960/480/240/120 — each ~90–120s active (this shape runs ~16 steps/s at
+# batch 8), keeping the high-batch attack runs in the frontier/steady-state regime
+# the estimator is calibrated for, while GT stays EXACT (batch×steps=15360).
+S4_CONFIGS = batch_inflation_set(
+    "d1024_s256_L6", d_model=1024, seq_len=256, num_layers=6, nhead=8,
+    dim_feedforward=4096, batches=[8, 16, 32, 64, 128], P=15360, ref_batch=8)
 
-RED_CONFIGS = S1_CONFIGS + S3_CONFIGS + S2_CONFIGS
+# S3 parent: A:d1024_s512_b16_L12_h8. nhead 8 is the reference; 1/2/32/64 are the
+# atypical geometries (head_dim 1024/512/32/16); + an sgd twin. steps fixed = 120
+# (~40–100s active, all frontier).
+S3_CONFIGS = atypical_set(
+    "d1024_s512_b16_L12", d_model=1024, seq_len=512, batch_size=16, num_layers=12,
+    dim_feedforward=4096, ref_nhead=8, nheads=[1, 2, 8, 32, 64], steps=120)
 
-# Strategy → configs, for the scorer's per-strategy grouping.
+RED_CONFIGS = S4_CONFIGS + S3_CONFIGS
+
 BY_STRATEGY = {}
 for _c in RED_CONFIGS:
     BY_STRATEGY.setdefault(_c["strategy"], []).append(_c["label"])
 
+# parent label -> the set it heads (for the GT-equivalence test).
+PARENTS = sorted({c["parent"] for c in RED_CONFIGS})
+
 
 if __name__ == "__main__":
-    print(f"RED_CONFIGS: {len(RED_CONFIGS)} entries")
+    print(f"RED_CONFIGS: {len(RED_CONFIGS)} entries; parents: {PARENTS}")
     for strat, labels in BY_STRATEGY.items():
-        print(f"  {strat:16s} {len(labels)}: {', '.join(labels)}")
+        print(f"  {strat:12s} {len(labels)}: {', '.join(labels)}")
+    # GT-invariance sanity: batch×steps constant within the S4 set.
+    prods = {c["batch_size"] * c["steps"] for c in S4_CONFIGS}
+    print(f"  S4 batch×steps products (must be 1 value): {prods}")

@@ -30,6 +30,44 @@ def gt_of(script, extra=()):
     return float(matches[-1]) if matches else None
 
 
+def check_gt_invariance():
+    """v3 one-variable invariant: every RED_CONFIG must match its parent's ground
+    truth (<1%). GT is deterministic in shape/steps/batch, so we compute it in-
+    process from FlopCounterMode (per-step FLOPs × steps; world_size is constant
+    and cancels) — no training, no torchrun. Needs cuda:0 free."""
+    import torch
+    sys.path.insert(0, REPO_ROOT)
+    sys.path.insert(0, os.path.join(REPO_ROOT, "red_team"))
+    from sample_ml_workload import TinyTransformer, count_flops_per_step
+    from redteam_configs import RED_CONFIGS
+
+    dev = torch.device("cuda:0")
+    gt_rel = {}
+    for c in RED_CONFIGS:
+        m = TinyTransformer(d_model=c["d_model"], nhead=c["nhead"],
+                            num_layers=c["num_layers"],
+                            dim_feedforward=c["dim_feedforward"]).to(dev)
+        fps = count_flops_per_step(m, c["batch_size"], c["seq_len"], c["d_model"],
+                                   dev, c["precision"])
+        gt_rel[c["label"]] = fps * c["steps"]          # ∝ true GT (world_size cancels)
+        del m
+        torch.cuda.empty_cache()
+
+    ok = True
+    for c in RED_CONFIGS:
+        parent = c["parent"]
+        if parent not in gt_rel:
+            print(f"FAIL: {c['label']} parent {parent} not in config set"); ok = False; continue
+        drift = abs(gt_rel[c["label"]] - gt_rel[parent]) / gt_rel[parent]
+        tag = "ok" if drift < 0.01 else "FAIL"
+        if drift >= 0.01:
+            ok = False
+        if c["label"] == parent or drift >= 0.01:
+            print(f"  {c['label']:34s} vs {parent:28s} GT drift {drift*100:6.3f}%  {tag}")
+    print(("PASS" if ok else "FAIL") + ": all RED_CONFIGS GT-match their parent (<1%)")
+    return 0 if ok else 1
+
+
 def main():
     benign = gt_of("sample_ml_workload.py")
     adv = gt_of("red_team/adversarial_workload.py", ["--strategy", "none"])
@@ -41,8 +79,9 @@ def main():
     if abs(benign - adv) > 1e-6:
         print(f"FAIL: GT drift {abs(benign - adv):.6g} TFLOPs — red wrapper changed the compute path")
         return 1
-    print("PASS: adversarial_workload --strategy none is GT-equivalent to benign")
-    return 0
+    print("PASS: adversarial_workload --strategy none is GT-equivalent to benign\n")
+    print("GT-invariance of the one-variable RED_CONFIGS vs their parents:")
+    return check_gt_invariance()
 
 
 if __name__ == "__main__":

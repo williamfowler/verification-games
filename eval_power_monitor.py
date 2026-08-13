@@ -578,7 +578,7 @@ def load_records_json(path):
     with open(path) as f:
         payload = json.load(f)
     return (payload["records"], payload["baseline_mw"],
-            payload["baseline_seconds"], payload.get("fingerprint"))
+            payload.get("baseline_seconds"), payload.get("fingerprint"))
 
 
 def load_records_txt(path):
@@ -1033,20 +1033,27 @@ def run_sweep(configs, idle_baseline_mw, gpu_indices, dump_cb=None, prior=None):
     for i, cfg in enumerate(configs):
         label = config_label(cfg)
         fam = cfg.get("family", "?")
-        # ── auto-size steps ──
-        print(f"\n[{i+1}/{len(configs)}] {label}  (fam {fam})  sizing...", flush=True)
-        rate, probe_out = measure_step_rate(cfg, gpu_indices)
-        if rate is None or rate <= 0:
-            oom = "out of memory" in probe_out.lower() or "OutOfMemoryError" in probe_out
-            reason = "OOM" if oom else "sizing-failed"
-            print(f"  WARNING: {label} {reason} — excluded", flush=True)
-            records.append(_excluded_record(cfg, label, reason))
-            if dump_cb:
-                dump_cb(records)
-            continue
-        cfg["steps"] = max(STEPS_MIN, min(STEPS_MAX, int(round(TARGET_ACTIVE_S * rate))))
-        print(f"  sized: {rate:.2f} steps/s -> steps={cfg['steps']}"
-              f"  (~{cfg['steps']/rate:.0f}s active)", flush=True)
+        # ── steps: fixed (GT-preserving red configs) or auto-sized ──
+        # A config with "fixed_steps" keeps its explicit `steps` (Phase II v3
+        # batch-inflation needs batch×steps held constant across a matched set so
+        # ground truth is identical — auto-sizing would break that invariant).
+        if cfg.get("fixed_steps"):
+            print(f"\n[{i+1}/{len(configs)}] {label}  (fam {fam})  "
+                  f"fixed steps={cfg['steps']}", flush=True)
+        else:
+            print(f"\n[{i+1}/{len(configs)}] {label}  (fam {fam})  sizing...", flush=True)
+            rate, probe_out = measure_step_rate(cfg, gpu_indices)
+            if rate is None or rate <= 0:
+                oom = "out of memory" in probe_out.lower() or "OutOfMemoryError" in probe_out
+                reason = "OOM" if oom else "sizing-failed"
+                print(f"  WARNING: {label} {reason} — excluded", flush=True)
+                records.append(_excluded_record(cfg, label, reason))
+                if dump_cb:
+                    dump_cb(records)
+                continue
+            cfg["steps"] = max(STEPS_MIN, min(STEPS_MAX, int(round(TARGET_ACTIVE_S * rate))))
+            print(f"  sized: {rate:.2f} steps/s -> steps={cfg['steps']}"
+                  f"  (~{cfg['steps']/rate:.0f}s active)", flush=True)
 
         # ── measured run ──
         result = run_workload(cfg, idle_baseline_mw, gpu_indices)

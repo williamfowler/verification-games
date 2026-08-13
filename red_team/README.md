@@ -1,107 +1,96 @@
-# Red-Team Adversarial Workloads (Phase II)
+# Red-Team Adversarial Workloads — Phase II (v3)
 
-Adversarial workloads a non-compliant party runs to drive the Phase-I calibrated
-FLOP estimator's error up, plus the harness and scoring that quantify each attack
-against Phase I's benchmark. Dual-V100 node, `floppy` branch.
+Deployment-phase adversarial workloads run against the **frozen benign-calibrated**
+FLOP estimator, scored primarily for **under-reporting**. Dual-V100, `floppy`.
+v3 supersedes v1 (retired artifacts in `../red_team_old/`).
 
-## Two invariants (never break these)
+## Invariants (enforced by `test_benign_equivalence.py`)
 
-1. **Ground truth stays honest.** Every strategy still prints the true
-   `[redteam] Ground truth total : X TFLOPs` from `FlopCounterMode`. The attack
-   lowers the blue team's *estimate*, never the reported GT — the GT is the
-   yardstick error is measured against. Guarded by `test_benign_equivalence.py`.
-2. **2× GPU-hour budget.** An attack may not spend more than 2× the GPU-hours a
-   benign run of the same GT-FLOP count would (`efficiency.py`). An attack that
-   halves the estimate but costs 5× GPU-hours is a **failed** attack and is
-   reported as such. Efficiency ratio = `R_benign / R_adv`; legal iff ≤ 2.0.
+1. **Frozen benign calibration** — the **primary estimator is the 4-param form**
+   `(E_net − E_PER_TB·TB − E_PER_NVLINK·NVLink − P_OH·t)/E_MARGINAL` (compute-energy,
+   DRAM, NVLink, overhead — `detect_flops.estimate_tflops_nvl`), Phase I benign fp16
+   fit `E_MARGINAL=3.54, E_PER_TB=93.4, E_PER_NVLINK=0.0, P_OH=0`. The NVLink
+   coefficient fits to 0 (all-reduce collinear with DRAM on benign DDP), so it
+   reduces numerically to power+DRAM, but it IS the scored estimator. The 2-param
+   power-only fit (`E_MARGINAL=4.78`) is the reported accuracy ablation. No
+   adversarial run ever enters a fit.
+2. **One variable, GT preserved** — every config declares a benign `parent` and
+   changes exactly one GT-invariant knob; `|GT_adv−GT_parent| < 1%` is asserted
+   in-process (FLOP-count, no training). Legal one-variables: `nhead`, `optimizer`,
+   `batch_size` (with `steps = P/batch` so batch×steps is constant), external
+   power/clock caps, idle gaps / throttle sleeps.
+3. **Honest GT every run**; the attack moves the estimate, never the reported GT.
+4. **2× GPU-hour budget** — `R_benign/R_adv ≤ 2` (`R_benign = 38,540 TF/GPU-h`);
+   an under-report that costs >2× the GPU-hours is a failed attack.
 
 ## Strategies
 
-| ID | strategy | signal gamed | group / path | file |
-|----|----------|--------------|--------------|------|
-| S1 | precision (fp32 twins) | energy-per-FLOP | A · offline | `redteam_configs.py` |
-| S2 | memory decoy | DRAM-bytes term (subtracted) | A · offline | `adversarial_workload.py --strategy mem_decoy` |
-| S2′ | NVLink decoy **[V100]** | interconnect term / tripwire | A · offline | `... mem_decoy --decoy-allreduce` |
-| S3 | atypical hyperparameters | fit extrapolation | A · offline | `redteam_configs.py` |
-| S4 | workload splitting | daemon start/stop detection | B · live daemon | `... --strategy split` |
-| S5 | sub-gate throttling | 80% frontier gate | B · live daemon | `... --strategy throttle` |
+| ID | strategy | one variable | targets | path | expectation |
+|----|----------|--------------|---------|------|-------------|
+| **S1** | workload split | idle-gap schedule | start/stop session detection | live daemon | **evades** (fragmentation) |
+| **S2** | throttle | per-step micro-sleep | util gate | live daemon | **fails** (peak gate) |
+| **S3** | atypical nhead/optimizer | `nhead`, `optimizer` | kernel efficiency (J/FLOP) | offline | over-report (FP pressure) |
+| **S4** | batch inflation | `batch_size` (8→128) | constant-J/FLOP assumption | offline + live | **under-report** (vs 2-param; 3-param DRAM term partly defends) |
+| **S5** | power cap | `nvidia-smi -pl` | power/energy signal (DVFS) | offline + live | under-report if efficiency gain beats the slowdown |
+| **S6** | clock lock | `nvidia-smi -lgc` | operating point (isolates S5) | offline | optional, only if S5 shows signal |
 
-**Group A** attacks a cleanly-bracketed offline run and is scored through
-`eval_power_monitor.py` on the same window as Phase I. **Group B** attacks the
-live daemon's *session logic* (which the offline eval bypasses) and must be run
-against `detect_flops.py` via `live_daemon_probe.py`.
+The three plausible under-report levers are **S1 (split), S4 (batch), S5 (power-cap)**;
+S2/S3 are documented negatives (still useful as false-positive / robustness evidence).
 
-### S1 caveat — the precision channel is *closed* on Volta (honest result)
+## Files
 
-The classic precision attack (run a higher-throughput precision than the
-calibration assumes, so measured energy-per-true-FLOP drops → under-report) has
-**no target here**: on Volta fp16 is already both the DDP baseline *and* the
-max-throughput precision (no bf16/tf32/fp8), and Phase I is fp16-calibrated. The
-only other precision, fp32, has *higher* energy-per-FLOP, so an fp32 run reads
-**high** (over-report) — it can't hide FLOPs. S1's fp32 configs quantify that
-precision-blindness (the magnitude of the fp32 over-estimate), and the honest
-finding is that the underreport-via-precision channel is closed on this hardware.
-On an Ampere+ node with a tf32/bf16 baseline it would reopen.
+- `adversarial_workload.py` — schedule attacks (`none`/`split`/`throttle`) via the
+  benign core's no-op hooks. (Decoy strategies retired to `red_team_old/`.)
+- `redteam_configs.py` — parent-linked, GT-preserving offline sets: **S4** batch
+  inflation (`batch_inflation_set`), **S3** atypical (`atypical_set`). Fed via
+  `eval_power_monitor.py --configs-module red_team.redteam_configs:RED_CONFIGS`.
+- `power_control.py` — **S5/S6** harness: sets `-pl`/`-lgc` around a benign run,
+  records the setting, restores on exit and crash. **Needs root** (see below).
+- `efficiency.py` — 2× budget gate; `R_benign`.
+- `live_daemon_probe.py` — S1/S2 against the live `detect_flops.py`.
+- `score_redteam.py` — signed-error / under-report-vs-benign-band scorer (2-param
+  vs 3-param), figures `writeup/fig_redteam_{signed,evasion}.png`.
+- `test_benign_equivalence.py` — GT honesty + one-variable/parent GT-invariance CI.
+- `consistency_gates.py` — **Phase III defense-in-depth**: cross-signal consistency
+  layer. The point estimate uses power(+DRAM) only (every estimator term is an
+  adversary lever); every other signal is a *gate* — an observable ratio that must
+  stay in its benign band. `arith_intensity` (NVLink/DRAM) is the shield that catches
+  batch-inflation (S4-b128) the point estimate misses; `comm_energy`/`dram_energy`/
+  `est_agreement` re-catch the retired comm/decoy attacks. 8.8% benign FP. The scorer
+  reports each strategy's point-estimate error AND gate verdict side by side.
 
-## Prerequisites
+## Privilege note (S5/S6)
 
-- **`nv-hostengine` must be running** (root) for DCGM DRAM-active (field 1005) and
-  NVLink counters — needed by both the offline sampler and the live daemon:
-  `! sudo nv-hostengine`. Power/util (nvidia-smi) are unprivileged.
-- Both V100s free (each run is DDP over both). The 10-trial Phase-I watchdog infra
-  (`run_trials.py` / `trial_guard.sh`) can be reused to babysit a long collection.
+`nvidia-smi -pl` and `-lgc` require root on this box (verified). `power_control.py`
+runs without privilege (at default power, warning + `cap_applied=False`) so the
+harness is testable as the tenant, but the real DVFS sweep must be run with
+privilege — model it as a granted capability (like the blue team's root DCGM
+access) or the red team requesting a power-capped allocation:
+
+```
+sudo /home/will/verification-games/.venv/bin/python red_team/power_control.py \
+    --sweep-pl 300 250 200 150 100
+```
 
 ## Run order
 
 ```bash
-# 0. sanity — GT honesty guard (no hostengine needed)
+# 0. invariants (GT honesty + one-variable/parent GT-match)
 python3 red_team/test_benign_equivalence.py
 
-# 1. efficiency reference (R_benign from the Phase I 10 trials)
-python3 red_team/efficiency.py
+# 1. offline S4 + S3 (also the S4 J/FLOP-vs-batch go/no-go)
+python3 eval_power_monitor.py --configs-module red_team.redteam_configs:RED_CONFIGS \
+    --records-json red_team/red_v3_trial1_records.json --output red_team/red_v3_trial1.txt --resume
 
-# 2. Group A collection — reuse the Phase I sweep with the red config list.
-#    Repeat into per-trial JSONs for 10-trial distributions (mirror Phase I).
-python3 eval_power_monitor.py \
-    --configs-module red_team.redteam_configs:RED_CONFIGS \
-    --records-json red_team/red_results_trial1_records.json --output /tmp/red1.txt
-#    (the sweep dumps records before its own fit/verdict; the FAIL verdict is
-#     expected — the offline fit pools mixed strategies and is not used. Scoring
-#     is done separately against the FROZEN Phase I calibration, below.)
+# 2. S5 power-cap sweep (root)
+sudo .../python red_team/power_control.py --sweep-pl 300 250 200 150 100
 
-# 3. Group B collection — live daemon, one record per strategy + a none baseline
-python3 red_team/live_daemon_probe.py --strategy none    --out red_team/live_none.json
-python3 red_team/live_daemon_probe.py --strategy split   --chunk-steps 100 --gap-seconds 6 --steps 400 --out red_team/live_split.json
-python3 red_team/live_daemon_probe.py --strategy throttle --target-util 70 --steps 400 --out red_team/live_throttle.json
+# 3. live daemon S1 split (gap sweep) + S2 throttle
+python3 red_team/live_daemon_probe.py --strategy split --chunk-steps 100 --gap-seconds 6 --steps 400 --out red_team/live_split.json
+python3 red_team/live_daemon_probe.py --strategy throttle --target-util 65 --steps 200 --out red_team/live_throttle.json
 
-# 4. Score everything against the FROZEN Phase I calibration + 2× gate; make figs
+# 4. score everything (foreground under-reporting) + figures
 python3 red_team/score_redteam.py \
-    --group-a red_team/red_results_trial1_records.json \
-    --group-b red_team/live_none.json red_team/live_split.json red_team/live_throttle.json
+    --group-a red_team/red_v3_trial1_records.json red_team/red_s5_records.json \
+    --group-b red_team/live_split.json red_team/live_throttle.json
 ```
-
-## Scoring model (do not launder the attack)
-
-Calibration is **frozen at Phase I**: constants are fit on the Phase I benign fp16
-frontier and adversarial runs are scored against them — never recalibrated
-including adversarial runs (that is the Phase III anti-pattern). `score_redteam.py`
-reports, per strategy, the signed estimator error under both the 2-param
-(power-only) and 3-param (power+DRAM) estimators, paired with the efficiency ratio
-and the 2× verdict, and emits `writeup/fig_redteam_error.png` and
-`writeup/fig_redteam_efficiency.png`.
-
-Note the estimator asymmetry the DRAM decoy exposes: inflating DRAM bytes makes
-the **3-param** estimator (which subtracts `E_per_TB·TB_moved`) read low, but the
-extra copies also burn power, so the **2-param** (power-only) estimator reads
-*high*. Phase I found power-only is the more accurate benign estimator — so the
-decoy that beats one estimator backfires on the other. That tension is the Phase
-III hook.
-
-## Files
-
-- `adversarial_workload.py` — one entry point, `--strategy {none,mem_decoy,split,throttle}`; imports the benign core and interposes only via `run_training`'s no-op hooks.
-- `redteam_configs.py` — `RED_CONFIGS` (Group A: S1/S2/S3), fed via `eval_power_monitor.py --configs-module`.
-- `efficiency.py` — GPU-hour accounting + the 2× budget gate; `R_benign`.
-- `live_daemon_probe.py` — Group B: drives `detect_flops.py`, reads back session estimates.
-- `score_redteam.py` — per-strategy error vs Phase I, efficiency table, the two figures.
-- `test_benign_equivalence.py` — CI guard for GT honesty.

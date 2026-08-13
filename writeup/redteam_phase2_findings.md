@@ -1,4 +1,10 @@
-# Phase II — Red-Team Adversarial Workloads: findings
+# Phase II — Red-Team Adversarial Workloads: findings (v1)
+
+> **v1 — superseded by the v3 plan.** This single-trial run established that the
+> energy model is not the attack surface on Volta (all offline hide-FLOPs attacks
+> over-report) and that workload-splitting evades. v3 builds on these results with
+> under-report levers (batch-inflation, power-capping). Retired v1 code/figures/
+> records now live in `red_team_old/` (figures referenced below moved there).
 
 Everything needed to write the outline's "Red-Team Adversarial Workloads" section.
 Single-trial collection (2026-08-03/04), dual-V100, `floppy`. Scale to 10 trials

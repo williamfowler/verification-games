@@ -1,0 +1,703 @@
+nvidia-smi power/util OK (GPUs [0, 1]).
+DCGM DRAM-active (field 1005) OK.
+DCGM NVLink/PCIe (fields 1009-1012) OK.
+Configs: red_team.redteam_configs:RED_CONFIGS — 11 entries
+
+Measuring single idle baseline (90s). Ensure no GPU workloads are running.
+  [baseline] sampling idle for 90s ...
+  [baseline] 168 samples  |  median 97410.0 mW  stdev 201.2 mW (both GPUs)
+Idle baseline: 97410.0 mW (both GPUs)  (n=168, stdev=201.2 mW)  — shared by ALL workloads
+
+[1/11] S4_d1024_s256_L6_b8  (fam S4)  fixed steps=1920
+  Launching: torchrun x2  --steps 1920 --batch-size 8 --seq-len 256 --d-model 1024 --num-layers 6 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 17:48:05.303000 93322 torch/distributed/run.py:766] 
+W0804 17:48:05.303000 93322 torch/distributed/run.py:766] *****************************************
+W0804 17:48:05.303000 93322 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 17:48:05.303000 93322 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=1920, batch/gpu=8, global_batch=16, seq=256, d_model=1024, layers=6, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 76626944 (76.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 972.810 GFLOPs
+[redteam] Ground truth total    : 3735.5908 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/1920  |  24.39 steps/s  |  0.0s elapsed  |  1.9456 TFLOPs
+  step   10/1920  |  20.42 steps/s  |  0.5s elapsed  |  21.4018 TFLOPs
+  step   20/1920  |  20.97 steps/s  |  1.0s elapsed  |  40.8580 TFLOPs
+  step   30/1920  |  21.20 steps/s  |  1.5s elapsed  |  60.3142 TFLOPs
+  step   40/1920  |  21.27 steps/s  |  1.9s elapsed  |  79.7704 TFLOPs
+  step   50/1920  |  21.35 steps/s  |  2.4s elapsed  |  99.2266 TFLOPs
+  step   60/1920  |  21.39 steps/s  |  2.9s elapsed  |  118.6828 TFLOPs
+  step   70/1920  |  21.41 steps/s  |  3.3s elapsed  |  138.1390 TFLOPs
+  step   80/1920  |  21.42 steps/s  |  3.8s elapsed  |  157.5952 TFLOPs
+  step   90/1920  |  21.43 steps/s  |  4.2s elapsed  |  177.0514 TFLOPs
+  step  100/1920  |  21.44 steps/s  |  4.7s elapsed  |  196.5076 TFLOPs
+  step  110/1920  |  21.45 steps/s  |  5.2s elapsed  |  215.9638 TFLOPs
+  step  120/1920  |  21.46 steps/s  |  5.6s elapsed  |  235.4200 TFLOPs
+  step  130/1920  |  21.47 steps/s  |  6.1s elapsed  |  254.8762 TFLOPs
+  step  140/1920  |  21.47 steps/s  |  6.6s elapsed  |  274.3324 TFLOPs
+  step  150/1920  |  21.48 steps/s  |  7.0s elapsed  |  293.7886 TFLOPs
+  step  160/1920  |  21.48 steps/s  |  7.5s elapsed  |  313.2448 TFLOPs
+  step  170/1920  |  21.49 steps/s  |  8.0s elapsed  |  332.7011 TFLOPs
+  step  180/1920  |  21.49 steps/s  |  8.4s elapsed  |  352.1573 TFLOPs
+  step  190/1920  |  21.50 steps/s  |  8.9s elapsed  |  371.6135 TFLOPs
+  step  200/1920  |  21.50 steps/s  |  9.4s elapsed  |  391.0697 TFLOPs
+  step  210/1920  |  21.50 steps/s  |  9.8s elapsed  |  410.5259 TFLOPs
+  step  220/1920  |  21.50 steps/s  |  10.3s elapsed  |  429.9821 TFLOPs
+  step  230/1920  |  21.50 steps/s  |  10.7s elapsed  |  449.4383 TFLOPs
+  step  240/1920  |  21.51 steps/s  |  11.2s elapsed  |  468.8945 TFLOPs
+  step  250/1920  |  21.51 steps/s  |  11.7s elapsed  |  488.3507 TFLOPs
+  step  260/1920  |  21.51 steps/s  |  12.1s elapsed  |  507.8069 TFLOPs
+  step  270/1920  |  21.51 steps/s  |  12.6s elapsed  |  527.2631 TFLOPs
+  step  280/1920  |  21.51 steps/s  |  13.1s elapsed  |  546.7193 TFLOPs
+  step  290/1920  |  21.51 steps/s  |  13.5s elapsed  |  566.1755 TFLOPs
+  step  300/1920  |  21.51 steps/s  |  14.0s elapsed  |  585.6317 TFLOPs
+  step  310/1920  |  21.51 steps/s  |  14.5s elapsed  |  605.0879 TFLOPs
+  step  320/1920  |  21.51 steps/s  |  14.9s elapsed  |  624.5441 TFLOPs
+  step  330/1920  |  21.51 steps/s  |  15.4s elapsed  |  644.0003 TFLOPs
+  step  340/1920  |  21.50 steps/s  |  15.9s elapsed  |  663.4565 TFLOPs
+  step  350/1920  |  21.42 steps/s  |  16.4s elapsed  |  682.9127 TFLOPs
+  step  360/1920  |  21.40 steps/s  |  16.9s elapsed  |  702.3689 TFLOPs
+  step  370/1920  |  21.37 steps/s  |  17.4s elapsed  |  721.8251 TFLOPs
+  step  380/1920  |  21.33 steps/s  |  17.9s elapsed  |  741.2813 TFLOPs
+  step  390/1920  |  21.29 steps/s  |  18.4s elapsed  |  760.7375 TFLOPs
+  step  400/1920  |  21.21 steps/s  |  18.9s elapsed  |  780.1937 TFLOPs
+  step  410/1920  |  21.17 steps/s  |  19.4s elapsed  |  799.6499 TFLOPs
+  step  420/1920  |  21.13 steps/s  |  19.9s elapsed  |  819.1061 TFLOPs
+  step  430/1920  |  21.08 steps/s  |  20.4s elapsed  |  838.5623 TFLOPs
+  step  440/1920  |  21.03 steps/s  |  21.0s elapsed  |  858.0185 TFLOPs
+  step  450/1920  |  20.99 steps/s  |  21.5s elapsed  |  877.4747 TFLOPs
+  step  460/1920  |  20.95 steps/s  |  22.0s elapsed  |  896.9309 TFLOPs
+  step  470/1920  |  20.92 steps/s  |  22.5s elapsed  |  916.3871 TFLOPs
+  step  480/1920  |  20.83 steps/s  |  23.1s elapsed  |  935.8433 TFLOPs
+  step  490/1920  |  20.77 steps/s  |  23.6s elapsed  |  955.2995 TFLOPs
+  step  500/1920  |  20.72 steps/s  |  24.2s elapsed  |  974.7557 TFLOPs
+  step  510/1920  |  20.68 steps/s  |  24.7s elapsed  |  994.2119 TFLOPs
+  step  520/1920  |  20.61 steps/s  |  25.3s elapsed  |  1013.6681 TFLOPs
+  step  530/1920  |  20.54 steps/s  |  25.9s elapsed  |  1033.1243 TFLOPs
+  step  540/1920  |  20.48 steps/s  |  26.4s elapsed  |  1052.5805 TFLOPs
+  step  550/1920  |  20.42 steps/s  |  27.0s elapsed  |  1072.0367 TFLOPs
+  step  560/1920  |  20.40 steps/s  |  27.5s elapsed  |  1091.4929 TFLOPs
+  step  570/1920  |  20.38 steps/s  |  28.0s elapsed  |  1110.9491 TFLOPs
+  step  580/1920  |  20.36 steps/s  |  28.5s elapsed  |  1130.4053 TFLOPs
+  step  590/1920  |  20.34 steps/s  |  29.1s elapsed  |  1149.8615 TFLOPs
+  step  600/1920  |  20.32 steps/s  |  29.6s elapsed  |  1169.3177 TFLOPs
+  step  610/1920  |  20.30 steps/s  |  30.1s elapsed  |  1188.7739 TFLOPs
+  step  620/1920  |  20.28 steps/s  |  30.6s elapsed  |  1208.2301 TFLOPs
+  step  630/1920  |  20.25 steps/s  |  31.2s elapsed  |  1227.6863 TFLOPs
+  step  640/1920  |  20.22 steps/s  |  31.7s elapsed  |  1247.1425 TFLOPs
+  step  650/1920  |  20.15 steps/s  |  32.3s elapsed  |  1266.5987 TFLOPs
+  step  660/1920  |  20.07 steps/s  |  32.9s elapsed  |  1286.0549 TFLOPs
+  step  670/1920  |  19.99 steps/s  |  33.6s elapsed  |  1305.5111 TFLOPs
+  step  680/1920  |  19.91 steps/s  |  34.2s elapsed  |  1324.9673 TFLOPs
+  step  690/1920  |  19.86 steps/s  |  34.8s elapsed  |  1344.4235 TFLOPs
+  step  700/1920  |  19.79 steps/s  |  35.4s elapsed  |  1363.8797 TFLOPs
+  step  710/1920  |  19.72 steps/s  |  36.1s elapsed  |  1383.3360 TFLOPs
+  step  720/1920  |  19.65 steps/s  |  36.7s elapsed  |  1402.7922 TFLOPs
+  step  730/1920  |  19.56 steps/s  |  37.4s elapsed  |  1422.2484 TFLOPs
+  step  740/1920  |  19.50 steps/s  |  38.0s elapsed  |  1441.7046 TFLOPs
+  step  750/1920  |  19.45 steps/s  |  38.6s elapsed  |  1461.1608 TFLOPs
+  step  760/1920  |  19.40 steps/s  |  39.2s elapsed  |  1480.6170 TFLOPs
+  step  770/1920  |  19.35 steps/s  |  39.9s elapsed  |  1500.0732 TFLOPs
+  step  780/1920  |  19.29 steps/s  |  40.5s elapsed  |  1519.5294 TFLOPs
+  step  790/1920  |  19.25 steps/s  |  41.1s elapsed  |  1538.9856 TFLOPs
+  step  800/1920  |  19.19 steps/s  |  41.7s elapsed  |  1558.4418 TFLOPs
+  step  810/1920  |  19.15 steps/s  |  42.4s elapsed  |  1577.8980 TFLOPs
+  step  820/1920  |  19.12 steps/s  |  43.0s elapsed  |  1597.3542 TFLOPs
+  step  830/1920  |  19.07 steps/s  |  43.6s elapsed  |  1616.8104 TFLOPs
+  step  840/1920  |  19.00 steps/s  |  44.3s elapsed  |  1636.2666 TFLOPs
+  step  850/1920  |  18.94 steps/s  |  44.9s elapsed  |  1655.7228 TFLOPs
+  step  860/1920  |  18.87 steps/s  |  45.6s elapsed  |  1675.1790 TFLOPs
+  step  870/1920  |  18.65 steps/s  |  46.7s elapsed  |  1694.6352 TFLOPs
+  step  880/1920  |  18.30 steps/s  |  48.1s elapsed  |  1714.0914 TFLOPs
+  step  890/1920  |  18.15 steps/s  |  49.1s elapsed  |  1733.5476 TFLOPs
+  step  900/1920  |  18.06 steps/s  |  49.9s elapsed  |  1753.0038 TFLOPs
+  step  910/1920  |  17.86 steps/s  |  51.0s elapsed  |  1772.4600 TFLOPs
+  step  920/1920  |  17.61 steps/s  |  52.3s elapsed  |  1791.9162 TFLOPs
+  step  930/1920  |  17.59 steps/s  |  52.9s elapsed  |  1811.3724 TFLOPs
+  step  940/1920  |  17.58 steps/s  |  53.5s elapsed  |  1830.8286 TFLOPs
+  step  950/1920  |  17.57 steps/s  |  54.1s elapsed  |  1850.2848 TFLOPs
+  step  960/1920  |  17.56 steps/s  |  54.7s elapsed  |  1869.7410 TFLOPs
+  step  970/1920  |  17.53 steps/s  |  55.4s elapsed  |  1889.1972 TFLOPs
+  step  980/1920  |  17.50 steps/s  |  56.0s elapsed  |  1908.6534 TFLOPs
+  step  990/1920  |  17.46 steps/s  |  56.8s elapsed  |  1928.1096 TFLOPs
+  step 1000/1920  |  17.11 steps/s  |  58.5s elapsed  |  1947.5658 TFLOPs
+  step 1010/1920  |  16.92 steps/s  |  59.8s elapsed  |  1967.0220 TFLOPs
+  step 1020/1920  |  16.80 steps/s  |  60.8s elapsed  |  1986.4782 TFLOPs
+  step 1030/1920  |  16.67 steps/s  |  61.8s elapsed  |  2005.9344 TFLOPs
+  step 1040/1920  |  16.68 steps/s  |  62.4s elapsed  |  2025.3906 TFLOPs
+  step 1050/1920  |  16.67 steps/s  |  63.1s elapsed  |  2044.8468 TFLOPs
+  step 1060/1920  |  16.65 steps/s  |  63.7s elapsed  |  2064.3030 TFLOPs
+  step 1070/1920  |  16.63 steps/s  |  64.4s elapsed  |  2083.7592 TFLOPs
+  step 1080/1920  |  16.62 steps/s  |  65.1s elapsed  |  2103.2154 TFLOPs
+  step 1090/1920  |  16.60 steps/s  |  65.7s elapsed  |  2122.6716 TFLOPs
+  step 1100/1920  |  16.59 steps/s  |  66.4s elapsed  |  2142.1278 TFLOPs
+  step 1110/1920  |  16.53 steps/s  |  67.2s elapsed  |  2161.5840 TFLOPs
+  step 1120/1920  |  16.49 steps/s  |  68.0s elapsed  |  2181.0402 TFLOPs
+  step 1130/1920  |  16.44 steps/s  |  68.8s elapsed  |  2200.4964 TFLOPs
+  step 1140/1920  |  16.27 steps/s  |  70.1s elapsed  |  2219.9526 TFLOPs
+  step 1150/1920  |  16.24 steps/s  |  70.9s elapsed  |  2239.4088 TFLOPs
+  step 1160/1920  |  16.24 steps/s  |  71.5s elapsed  |  2258.8650 TFLOPs
+  step 1170/1920  |  16.10 steps/s  |  72.7s elapsed  |  2278.3212 TFLOPs
+  step 1180/1920  |  16.09 steps/s  |  73.4s elapsed  |  2297.7774 TFLOPs
+  step 1190/1920  |  16.07 steps/s  |  74.1s elapsed  |  2317.2336 TFLOPs
+  step 1200/1920  |  16.06 steps/s  |  74.8s elapsed  |  2336.6898 TFLOPs
+  step 1210/1920  |  16.04 steps/s  |  75.5s elapsed  |  2356.1460 TFLOPs
+  step 1220/1920  |  16.03 steps/s  |  76.2s elapsed  |  2375.6022 TFLOPs
+  step 1230/1920  |  16.01 steps/s  |  76.9s elapsed  |  2395.0584 TFLOPs
+  step 1240/1920  |  16.00 steps/s  |  77.6s elapsed  |  2414.5146 TFLOPs
+  step 1250/1920  |  15.99 steps/s  |  78.3s elapsed  |  2433.9709 TFLOPs
+  step 1260/1920  |  15.97 steps/s  |  79.0s elapsed  |  2453.4271 TFLOPs
+  step 1270/1920  |  15.96 steps/s  |  79.6s elapsed  |  2472.8833 TFLOPs
+  step 1280/1920  |  15.94 steps/s  |  80.3s elapsed  |  2492.3395 TFLOPs
+  step 1290/1920  |  15.93 steps/s  |  81.0s elapsed  |  2511.7957 TFLOPs
+  step 1300/1920  |  15.92 steps/s  |  81.7s elapsed  |  2531.2519 TFLOPs
+  step 1310/1920  |  15.90 steps/s  |  82.5s elapsed  |  2550.7081 TFLOPs
+  step 1320/1920  |  15.89 steps/s  |  83.1s elapsed  |  2570.1643 TFLOPs
+  step 1330/1920  |  15.87 steps/s  |  83.9s elapsed  |  2589.6205 TFLOPs
+  step 1340/1920  |  15.85 steps/s  |  84.6s elapsed  |  2609.0767 TFLOPs
+  step 1350/1920  |  15.84 steps/s  |  85.3s elapsed  |  2628.5329 TFLOPs
+  step 1360/1920  |  15.83 steps/s  |  86.0s elapsed  |  2647.9891 TFLOPs
+  step 1370/1920  |  15.82 steps/s  |  86.7s elapsed  |  2667.4453 TFLOPs
+  step 1380/1920  |  15.81 steps/s  |  87.3s elapsed  |  2686.9015 TFLOPs
+  step 1390/1920  |  15.80 steps/s  |  88.0s elapsed  |  2706.3577 TFLOPs
+  step 1400/1920  |  15.78 steps/s  |  88.8s elapsed  |  2725.8139 TFLOPs
+  step 1410/1920  |  15.77 steps/s  |  89.5s elapsed  |  2745.2701 TFLOPs
+  step 1420/1920  |  15.76 steps/s  |  90.2s elapsed  |  2764.7263 TFLOPs
+  step 1430/1920  |  15.75 steps/s  |  90.9s elapsed  |  2784.1825 TFLOPs
+  step 1440/1920  |  15.73 steps/s  |  91.6s elapsed  |  2803.6387 TFLOPs
+  step 1450/1920  |  15.72 steps/s  |  92.3s elapsed  |  2823.0949 TFLOPs
+  step 1460/1920  |  15.71 steps/s  |  93.0s elapsed  |  2842.5511 TFLOPs
+  step 1470/1920  |  15.71 steps/s  |  93.7s elapsed  |  2862.0073 TFLOPs
+  step 1480/1920  |  15.70 steps/s  |  94.4s elapsed  |  2881.4635 TFLOPs
+  step 1490/1920  |  15.68 steps/s  |  95.1s elapsed  |  2900.9197 TFLOPs
+  step 1500/1920  |  15.67 steps/s  |  95.8s elapsed  |  2920.3759 TFLOPs
+  step 1510/1920  |  15.66 steps/s  |  96.5s elapsed  |  2939.8321 TFLOPs
+  step 1520/1920  |  15.64 steps/s  |  97.3s elapsed  |  2959.2883 TFLOPs
+  step 1530/1920  |  15.63 steps/s  |  98.0s elapsed  |  2978.7445 TFLOPs
+  step 1540/1920  |  15.62 steps/s  |  98.7s elapsed  |  2998.2007 TFLOPs
+  step 1550/1920  |  15.61 steps/s  |  99.3s elapsed  |  3017.6569 TFLOPs
+  step 1560/1920  |  15.59 steps/s  |  100.1s elapsed  |  3037.1131 TFLOPs
+  step 1570/1920  |  15.58 steps/s  |  100.9s elapsed  |  3056.5693 TFLOPs
+  step 1580/1920  |  15.42 steps/s  |  102.5s elapsed  |  3076.0255 TFLOPs
+  step 1590/1920  |  15.30 steps/s  |  104.0s elapsed  |  3095.4817 TFLOPs
+  step 1600/1920  |  15.20 steps/s  |  105.4s elapsed  |  3114.9379 TFLOPs
+  step 1610/1920  |  15.04 steps/s  |  107.1s elapsed  |  3134.3941 TFLOPs
+  step 1620/1920  |  14.99 steps/s  |  108.1s elapsed  |  3153.8503 TFLOPs
+  step 1630/1920  |  15.00 steps/s  |  108.7s elapsed  |  3173.3065 TFLOPs
+  step 1640/1920  |  15.02 steps/s  |  109.3s elapsed  |  3192.7627 TFLOPs
+  step 1650/1920  |  15.03 steps/s  |  109.9s elapsed  |  3212.2189 TFLOPs
+  step 1660/1920  |  15.02 steps/s  |  110.6s elapsed  |  3231.6751 TFLOPs
+  step 1670/1920  |  14.95 steps/s  |  111.8s elapsed  |  3251.1313 TFLOPs
+  step 1680/1920  |  14.84 steps/s  |  113.3s elapsed  |  3270.5875 TFLOPs
+  step 1690/1920  |  14.78 steps/s  |  114.4s elapsed  |  3290.0437 TFLOPs
+  step 1700/1920  |  14.74 steps/s  |  115.4s elapsed  |  3309.4999 TFLOPs
+  step 1710/1920  |  14.74 steps/s  |  116.1s elapsed  |  3328.9561 TFLOPs
+  step 1720/1920  |  14.74 steps/s  |  116.8s elapsed  |  3348.4123 TFLOPs
+  step 1730/1920  |  14.74 steps/s  |  117.5s elapsed  |  3367.8685 TFLOPs
+  step 1740/1920  |  14.74 steps/s  |  118.1s elapsed  |  3387.3247 TFLOPs
+  step 1750/1920  |  14.74 steps/s  |  118.8s elapsed  |  3406.7809 TFLOPs
+  step 1760/1920  |  14.74 steps/s  |  119.5s elapsed  |  3426.2371 TFLOPs
+  step 1770/1920  |  14.74 steps/s  |  120.2s elapsed  |  3445.6933 TFLOPs
+  step 1780/1920  |  14.74 steps/s  |  120.8s elapsed  |  3465.1495 TFLOPs
+  step 1790/1920  |  14.73 steps/s  |  121.6s elapsed  |  3484.6058 TFLOPs
+  step 1800/1920  |  14.72 steps/s  |  122.3s elapsed  |  3504.0620 TFLOPs
+  step 1810/1920  |  14.62 steps/s  |  123.9s elapsed  |  3523.5182 TFLOPs
+  step 1820/1920  |  14.57 steps/s  |  125.0s elapsed  |  3542.9744 TFLOPs
+  step 1830/1920  |  14.57 steps/s  |  125.7s elapsed  |  3562.4306 TFLOPs
+  step 1840/1920  |  14.57 steps/s  |  126.4s elapsed  |  3581.8868 TFLOPs
+  step 1850/1920  |  14.57 steps/s  |  127.0s elapsed  |  3601.3430 TFLOPs
+  step 1860/1920  |  14.57 steps/s  |  127.7s elapsed  |  3620.7992 TFLOPs
+  step 1870/1920  |  14.57 steps/s  |  128.4s elapsed  |  3640.2554 TFLOPs
+  step 1880/1920  |  14.57 steps/s  |  129.1s elapsed  |  3659.7116 TFLOPs
+  step 1890/1920  |  14.57 steps/s  |  129.8s elapsed  |  3679.1678 TFLOPs
+  step 1900/1920  |  14.57 steps/s  |  130.5s elapsed  |  3698.6240 TFLOPs
+  step 1910/1920  |  14.49 steps/s  |  131.9s elapsed  |  3718.0802 TFLOPs
+
+[redteam] Done. 1920 steps in 133.0s (14.44 steps/s)
+[redteam] Ground truth total : 3735.5908 TFLOPs
+[redteam] Ground truth rate  : 28.0971 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 3735.59 TFLOPs  | net 17766 J  | 134s  | gpu 97/96%  | NVLink 1222MB/step  | FRONTIER
+
+[2/11] S4_d1024_s256_L6_b16  (fam S4)  fixed steps=960
+  Launching: torchrun x2  --steps 960 --batch-size 16 --seq-len 256 --d-model 1024 --num-layers 6 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 17:50:24.686000 93906 torch/distributed/run.py:766] 
+W0804 17:50:24.686000 93906 torch/distributed/run.py:766] *****************************************
+W0804 17:50:24.686000 93906 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 17:50:24.686000 93906 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=960, batch/gpu=16, global_batch=32, seq=256, d_model=1024, layers=6, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 76626944 (76.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 1945.620 GFLOPs
+[redteam] Ground truth total    : 3735.5908 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/960  |  13.84 steps/s  |  0.1s elapsed  |  3.8912 TFLOPs
+  step   10/960  |  11.12 steps/s  |  1.0s elapsed  |  42.8036 TFLOPs
+  step   20/960  |  6.57 steps/s  |  3.2s elapsed  |  81.7160 TFLOPs
+  step   30/960  |  4.93 steps/s  |  6.3s elapsed  |  120.6285 TFLOPs
+  step   40/960  |  5.13 steps/s  |  8.0s elapsed  |  159.5409 TFLOPs
+  step   50/960  |  5.29 steps/s  |  9.6s elapsed  |  198.4533 TFLOPs
+  step   60/960  |  5.71 steps/s  |  10.7s elapsed  |  237.3657 TFLOPs
+  step   70/960  |  6.05 steps/s  |  11.7s elapsed  |  276.2781 TFLOPs
+  step   80/960  |  5.80 steps/s  |  14.0s elapsed  |  315.1905 TFLOPs
+  step   90/960  |  5.25 steps/s  |  17.3s elapsed  |  354.1029 TFLOPs
+  step  100/960  |  5.41 steps/s  |  18.7s elapsed  |  393.0153 TFLOPs
+  step  110/960  |  5.64 steps/s  |  19.7s elapsed  |  431.9277 TFLOPs
+  step  120/960  |  5.80 steps/s  |  20.9s elapsed  |  470.8401 TFLOPs
+  step  130/960  |  5.57 steps/s  |  23.5s elapsed  |  509.7525 TFLOPs
+  step  140/960  |  5.46 steps/s  |  25.8s elapsed  |  548.6649 TFLOPs
+  step  150/960  |  5.44 steps/s  |  27.7s elapsed  |  587.5773 TFLOPs
+  step  160/960  |  5.30 steps/s  |  30.4s elapsed  |  626.4897 TFLOPs
+  step  170/960  |  5.42 steps/s  |  31.5s elapsed  |  665.4021 TFLOPs
+  step  180/960  |  5.36 steps/s  |  33.8s elapsed  |  704.3145 TFLOPs
+  step  190/960  |  5.17 steps/s  |  36.9s elapsed  |  743.2269 TFLOPs
+  step  200/960  |  5.28 steps/s  |  38.1s elapsed  |  782.1393 TFLOPs
+  step  210/960  |  5.26 steps/s  |  40.1s elapsed  |  821.0517 TFLOPs
+  step  220/960  |  5.38 steps/s  |  41.1s elapsed  |  859.9641 TFLOPs
+  step  230/960  |  5.39 steps/s  |  42.8s elapsed  |  898.8765 TFLOPs
+  step  240/960  |  5.30 steps/s  |  45.4s elapsed  |  937.7889 TFLOPs
+  step  250/960  |  5.25 steps/s  |  47.8s elapsed  |  976.7013 TFLOPs
+  step  260/960  |  5.10 steps/s  |  51.2s elapsed  |  1015.6137 TFLOPs
+  step  270/960  |  5.11 steps/s  |  53.1s elapsed  |  1054.5261 TFLOPs
+  step  280/960  |  5.11 steps/s  |  55.0s elapsed  |  1093.4385 TFLOPs
+  step  290/960  |  5.11 steps/s  |  57.0s elapsed  |  1132.3509 TFLOPs
+  step  300/960  |  5.10 steps/s  |  59.0s elapsed  |  1171.2634 TFLOPs
+  step  310/960  |  5.18 steps/s  |  60.0s elapsed  |  1210.1758 TFLOPs
+  step  320/960  |  5.25 steps/s  |  61.2s elapsed  |  1249.0882 TFLOPs
+  step  330/960  |  5.18 steps/s  |  63.9s elapsed  |  1288.0006 TFLOPs
+  step  340/960  |  5.10 steps/s  |  66.8s elapsed  |  1326.9130 TFLOPs
+  step  350/960  |  5.10 steps/s  |  68.8s elapsed  |  1365.8254 TFLOPs
+  step  360/960  |  5.16 steps/s  |  70.0s elapsed  |  1404.7378 TFLOPs
+  step  370/960  |  5.22 steps/s  |  71.0s elapsed  |  1443.6502 TFLOPs
+  step  380/960  |  5.17 steps/s  |  73.7s elapsed  |  1482.5626 TFLOPs
+  step  390/960  |  5.19 steps/s  |  75.3s elapsed  |  1521.4750 TFLOPs
+  step  400/960  |  5.25 steps/s  |  76.4s elapsed  |  1560.3874 TFLOPs
+  step  410/960  |  5.28 steps/s  |  77.8s elapsed  |  1599.2998 TFLOPs
+  step  420/960  |  5.32 steps/s  |  79.1s elapsed  |  1638.2122 TFLOPs
+  step  430/960  |  5.35 steps/s  |  80.6s elapsed  |  1677.1246 TFLOPs
+  step  440/960  |  5.33 steps/s  |  82.8s elapsed  |  1716.0370 TFLOPs
+  step  450/960  |  5.31 steps/s  |  84.9s elapsed  |  1754.9494 TFLOPs
+  step  460/960  |  5.31 steps/s  |  86.9s elapsed  |  1793.8618 TFLOPs
+  step  470/960  |  5.30 steps/s  |  88.9s elapsed  |  1832.7742 TFLOPs
+  step  480/960  |  5.29 steps/s  |  90.9s elapsed  |  1871.6866 TFLOPs
+  step  490/960  |  5.34 steps/s  |  92.0s elapsed  |  1910.5990 TFLOPs
+  step  500/960  |  5.33 steps/s  |  94.0s elapsed  |  1949.5114 TFLOPs
+  step  510/960  |  5.38 steps/s  |  95.1s elapsed  |  1988.4238 TFLOPs
+  step  520/960  |  5.42 steps/s  |  96.1s elapsed  |  2027.3362 TFLOPs
+  step  530/960  |  5.35 steps/s  |  99.2s elapsed  |  2066.2486 TFLOPs
+  step  540/960  |  5.31 steps/s  |  101.9s elapsed  |  2105.1610 TFLOPs
+  step  550/960  |  5.33 steps/s  |  103.3s elapsed  |  2144.0734 TFLOPs
+  step  560/960  |  5.33 steps/s  |  105.2s elapsed  |  2182.9858 TFLOPs
+  step  570/960  |  5.28 steps/s  |  108.1s elapsed  |  2221.8983 TFLOPs
+  step  580/960  |  5.28 steps/s  |  110.1s elapsed  |  2260.8107 TFLOPs
+  step  590/960  |  5.27 steps/s  |  112.2s elapsed  |  2299.7231 TFLOPs
+  step  600/960  |  5.26 steps/s  |  114.2s elapsed  |  2338.6355 TFLOPs
+  step  610/960  |  5.25 steps/s  |  116.3s elapsed  |  2377.5479 TFLOPs
+  step  620/960  |  5.19 steps/s  |  119.6s elapsed  |  2416.4603 TFLOPs
+  step  630/960  |  5.23 steps/s  |  120.6s elapsed  |  2455.3727 TFLOPs
+  step  640/960  |  5.27 steps/s  |  121.7s elapsed  |  2494.2851 TFLOPs
+  step  650/960  |  5.31 steps/s  |  122.7s elapsed  |  2533.1975 TFLOPs
+  step  660/960  |  5.26 steps/s  |  125.7s elapsed  |  2572.1099 TFLOPs
+  step  670/960  |  5.29 steps/s  |  126.8s elapsed  |  2611.0223 TFLOPs
+  step  680/960  |  5.30 steps/s  |  128.5s elapsed  |  2649.9347 TFLOPs
+  step  690/960  |  5.29 steps/s  |  130.6s elapsed  |  2688.8471 TFLOPs
+  step  700/960  |  5.30 steps/s  |  132.3s elapsed  |  2727.7595 TFLOPs
+  step  710/960  |  5.32 steps/s  |  133.7s elapsed  |  2766.6719 TFLOPs
+  step  720/960  |  5.35 steps/s  |  134.7s elapsed  |  2805.5843 TFLOPs
+  step  730/960  |  5.34 steps/s  |  136.8s elapsed  |  2844.4967 TFLOPs
+  step  740/960  |  5.37 steps/s  |  138.0s elapsed  |  2883.4091 TFLOPs
+  step  750/960  |  5.37 steps/s  |  139.8s elapsed  |  2922.3215 TFLOPs
+  step  760/960  |  5.32 steps/s  |  142.9s elapsed  |  2961.2339 TFLOPs
+  step  770/960  |  5.32 steps/s  |  144.9s elapsed  |  3000.1463 TFLOPs
+  step  780/960  |  5.34 steps/s  |  146.1s elapsed  |  3039.0587 TFLOPs
+  step  790/960  |  5.32 steps/s  |  148.7s elapsed  |  3077.9711 TFLOPs
+  step  800/960  |  5.32 steps/s  |  150.5s elapsed  |  3116.8835 TFLOPs
+  step  810/960  |  5.32 steps/s  |  152.3s elapsed  |  3155.7959 TFLOPs
+  step  820/960  |  5.28 steps/s  |  155.6s elapsed  |  3194.7083 TFLOPs
+  step  830/960  |  5.28 steps/s  |  157.3s elapsed  |  3233.6207 TFLOPs
+  step  840/960  |  5.27 steps/s  |  159.5s elapsed  |  3272.5332 TFLOPs
+  step  850/960  |  5.27 steps/s  |  161.4s elapsed  |  3311.4456 TFLOPs
+  step  860/960  |  5.29 steps/s  |  162.8s elapsed  |  3350.3580 TFLOPs
+  step  870/960  |  5.25 steps/s  |  165.8s elapsed  |  3389.2704 TFLOPs
+  step  880/960  |  5.26 steps/s  |  167.6s elapsed  |  3428.1828 TFLOPs
+  step  890/960  |  5.25 steps/s  |  169.6s elapsed  |  3467.0952 TFLOPs
+  step  900/960  |  5.23 steps/s  |  172.2s elapsed  |  3506.0076 TFLOPs
+  step  910/960  |  5.24 steps/s  |  173.9s elapsed  |  3544.9200 TFLOPs
+  step  920/960  |  5.27 steps/s  |  174.9s elapsed  |  3583.8324 TFLOPs
+  step  930/960  |  5.29 steps/s  |  176.1s elapsed  |  3622.7448 TFLOPs
+  step  940/960  |  5.30 steps/s  |  177.4s elapsed  |  3661.6572 TFLOPs
+  step  950/960  |  5.29 steps/s  |  179.8s elapsed  |  3700.5696 TFLOPs
+
+[redteam] Done. 960 steps in 182.4s (5.26 steps/s)
+[redteam] Ground truth total : 3735.5908 TFLOPs
+[redteam] Ground truth rate  : 20.4843 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 3735.59 TFLOPs  | net 18421 J  | 184s  | gpu 98/98%  | NVLink 1233MB/step  | FRONTIER
+
+[3/11] S4_d1024_s256_L6_b32  (fam S4)  fixed steps=480
+  Launching: torchrun x2  --steps 480 --batch-size 32 --seq-len 256 --d-model 1024 --num-layers 6 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 17:53:33.842000 94670 torch/distributed/run.py:766] 
+W0804 17:53:33.842000 94670 torch/distributed/run.py:766] *****************************************
+W0804 17:53:33.842000 94670 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 17:53:33.842000 94670 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=480, batch/gpu=32, global_batch=64, seq=256, d_model=1024, layers=6, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 76626944 (76.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 3891.240 GFLOPs
+[redteam] Ground truth total    : 3735.5908 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/480  |  7.43 steps/s  |  0.1s elapsed  |  7.7825 TFLOPs
+  step   10/480  |  5.66 steps/s  |  1.9s elapsed  |  85.6073 TFLOPs
+  step   20/480  |  3.91 steps/s  |  5.4s elapsed  |  163.4321 TFLOPs
+  step   30/480  |  3.12 steps/s  |  9.9s elapsed  |  241.2569 TFLOPs
+  step   40/480  |  3.35 steps/s  |  12.2s elapsed  |  319.0817 TFLOPs
+  step   50/480  |  3.36 steps/s  |  15.2s elapsed  |  396.9065 TFLOPs
+  step   60/480  |  3.15 steps/s  |  19.4s elapsed  |  474.7313 TFLOPs
+  step   70/480  |  3.30 steps/s  |  21.5s elapsed  |  552.5561 TFLOPs
+  step   80/480  |  3.28 steps/s  |  24.7s elapsed  |  630.3809 TFLOPs
+  step   90/480  |  3.40 steps/s  |  26.7s elapsed  |  708.2057 TFLOPs
+  step  100/480  |  3.30 steps/s  |  30.7s elapsed  |  786.0306 TFLOPs
+  step  110/480  |  3.30 steps/s  |  33.7s elapsed  |  863.8554 TFLOPs
+  step  120/480  |  3.22 steps/s  |  37.6s elapsed  |  941.6802 TFLOPs
+  step  130/480  |  3.18 steps/s  |  41.2s elapsed  |  1019.5050 TFLOPs
+  step  140/480  |  3.16 steps/s  |  44.7s elapsed  |  1097.3298 TFLOPs
+  step  150/480  |  3.11 steps/s  |  48.6s elapsed  |  1175.1546 TFLOPs
+  step  160/480  |  3.12 steps/s  |  51.6s elapsed  |  1252.9794 TFLOPs
+  step  170/480  |  3.13 steps/s  |  54.6s elapsed  |  1330.8042 TFLOPs
+  step  180/480  |  3.11 steps/s  |  58.3s elapsed  |  1408.6290 TFLOPs
+  step  190/480  |  3.05 steps/s  |  62.7s elapsed  |  1486.4538 TFLOPs
+  step  200/480  |  3.05 steps/s  |  65.9s elapsed  |  1564.2786 TFLOPs
+  step  210/480  |  3.05 steps/s  |  69.2s elapsed  |  1642.1034 TFLOPs
+  step  220/480  |  3.06 steps/s  |  72.3s elapsed  |  1719.9282 TFLOPs
+  step  230/480  |  3.06 steps/s  |  75.5s elapsed  |  1797.7531 TFLOPs
+  step  240/480  |  3.08 steps/s  |  78.2s elapsed  |  1875.5779 TFLOPs
+  step  250/480  |  3.05 steps/s  |  82.2s elapsed  |  1953.4027 TFLOPs
+  step  260/480  |  3.01 steps/s  |  86.8s elapsed  |  2031.2275 TFLOPs
+  step  270/480  |  3.00 steps/s  |  90.3s elapsed  |  2109.0523 TFLOPs
+  step  280/480  |  2.98 steps/s  |  94.3s elapsed  |  2186.8771 TFLOPs
+  step  290/480  |  2.99 steps/s  |  97.3s elapsed  |  2264.7019 TFLOPs
+  step  300/480  |  3.00 steps/s  |  100.4s elapsed  |  2342.5267 TFLOPs
+  step  310/480  |  3.00 steps/s  |  103.6s elapsed  |  2420.3515 TFLOPs
+  step  320/480  |  2.98 steps/s  |  107.6s elapsed  |  2498.1763 TFLOPs
+  step  330/480  |  3.01 steps/s  |  110.1s elapsed  |  2576.0011 TFLOPs
+  step  340/480  |  3.00 steps/s  |  113.8s elapsed  |  2653.8259 TFLOPs
+  step  350/480  |  3.03 steps/s  |  115.9s elapsed  |  2731.6507 TFLOPs
+  step  360/480  |  3.01 steps/s  |  120.0s elapsed  |  2809.4755 TFLOPs
+  step  370/480  |  3.02 steps/s  |  123.0s elapsed  |  2887.3004 TFLOPs
+  step  380/480  |  3.03 steps/s  |  125.6s elapsed  |  2965.1252 TFLOPs
+  step  390/480  |  3.04 steps/s  |  128.6s elapsed  |  3042.9500 TFLOPs
+  step  400/480  |  3.05 steps/s  |  131.4s elapsed  |  3120.7748 TFLOPs
+  step  410/480  |  3.03 steps/s  |  135.9s elapsed  |  3198.5996 TFLOPs
+  step  420/480  |  3.04 steps/s  |  138.6s elapsed  |  3276.4244 TFLOPs
+  step  430/480  |  3.03 steps/s  |  142.2s elapsed  |  3354.2492 TFLOPs
+  step  440/480  |  3.03 steps/s  |  145.6s elapsed  |  3432.0740 TFLOPs
+  step  450/480  |  3.02 steps/s  |  149.2s elapsed  |  3509.8988 TFLOPs
+  step  460/480  |  3.01 steps/s  |  152.9s elapsed  |  3587.7236 TFLOPs
+  step  470/480  |  3.01 steps/s  |  156.3s elapsed  |  3665.5484 TFLOPs
+
+[redteam] Done. 480 steps in 158.5s (3.03 steps/s)
+[redteam] Ground truth total : 3735.5908 TFLOPs
+[redteam] Ground truth rate  : 23.5713 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 3735.59 TFLOPs  | net 16188 J  | 160s  | gpu 99/99%  | NVLink 1247MB/step  | FRONTIER
+
+[4/11] S4_d1024_s256_L6_b64  (fam S4)  fixed steps=240
+  Launching: torchrun x2  --steps 240 --batch-size 64 --seq-len 256 --d-model 1024 --num-layers 6 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 17:56:19.111000 95346 torch/distributed/run.py:766] 
+W0804 17:56:19.111000 95346 torch/distributed/run.py:766] *****************************************
+W0804 17:56:19.111000 95346 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 17:56:19.111000 95346 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=240, batch/gpu=64, global_batch=128, seq=256, d_model=1024, layers=6, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 76626944 (76.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 7782.481 GFLOPs
+[redteam] Ground truth total    : 3735.5908 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/240  |  1.15 steps/s  |  0.9s elapsed  |  15.5650 TFLOPs
+  step   10/240  |  1.48 steps/s  |  7.4s elapsed  |  171.2146 TFLOPs
+  step   20/240  |  1.59 steps/s  |  13.2s elapsed  |  326.8642 TFLOPs
+  step   30/240  |  1.64 steps/s  |  18.9s elapsed  |  482.5138 TFLOPs
+  step   40/240  |  1.67 steps/s  |  24.5s elapsed  |  638.1634 TFLOPs
+  step   50/240  |  1.75 steps/s  |  29.2s elapsed  |  793.8130 TFLOPs
+  step   60/240  |  1.73 steps/s  |  35.2s elapsed  |  949.4627 TFLOPs
+  step   70/240  |  1.75 steps/s  |  40.5s elapsed  |  1105.1123 TFLOPs
+  step   80/240  |  1.72 steps/s  |  47.2s elapsed  |  1260.7619 TFLOPs
+  step   90/240  |  1.70 steps/s  |  53.4s elapsed  |  1416.4115 TFLOPs
+  step  100/240  |  1.70 steps/s  |  59.4s elapsed  |  1572.0611 TFLOPs
+  step  110/240  |  1.71 steps/s  |  64.7s elapsed  |  1727.7107 TFLOPs
+  step  120/240  |  1.74 steps/s  |  69.5s elapsed  |  1883.3603 TFLOPs
+  step  130/240  |  1.72 steps/s  |  76.4s elapsed  |  2039.0100 TFLOPs
+  step  140/240  |  1.72 steps/s  |  82.0s elapsed  |  2194.6596 TFLOPs
+  step  150/240  |  1.69 steps/s  |  89.2s elapsed  |  2350.3092 TFLOPs
+  step  160/240  |  1.68 steps/s  |  95.6s elapsed  |  2505.9588 TFLOPs
+  step  170/240  |  1.69 steps/s  |  101.3s elapsed  |  2661.6084 TFLOPs
+  step  180/240  |  1.69 steps/s  |  107.0s elapsed  |  2817.2580 TFLOPs
+  step  190/240  |  1.68 steps/s  |  114.0s elapsed  |  2972.9076 TFLOPs
+  step  200/240  |  1.69 steps/s  |  119.0s elapsed  |  3128.5573 TFLOPs
+  step  210/240  |  1.69 steps/s  |  124.8s elapsed  |  3284.2069 TFLOPs
+  step  220/240  |  1.68 steps/s  |  131.5s elapsed  |  3439.8565 TFLOPs
+  step  230/240  |  1.69 steps/s  |  137.1s elapsed  |  3595.5061 TFLOPs
+
+[redteam] Done. 240 steps in 143.0s (1.68 steps/s)
+[redteam] Ground truth total : 3735.5908 TFLOPs
+[redteam] Ground truth rate  : 26.1286 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 3735.59 TFLOPs  | net 14078 J  | 145s  | gpu 99/99%  | NVLink 1230MB/step  | FRONTIER
+
+[5/11] S4_d1024_s256_L6_b128  (fam S4)  fixed steps=120
+  Launching: torchrun x2  --steps 120 --batch-size 128 --seq-len 256 --d-model 1024 --num-layers 6 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 17:58:49.271000 96018 torch/distributed/run.py:766] 
+W0804 17:58:49.271000 96018 torch/distributed/run.py:766] *****************************************
+W0804 17:58:49.271000 96018 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 17:58:49.271000 96018 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=120, batch/gpu=128, global_batch=256, seq=256, d_model=1024, layers=6, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 76626944 (76.6M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 15564.961 GFLOPs
+[redteam] Ground truth total    : 3735.5908 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/120  |  1.96 steps/s  |  0.5s elapsed  |  31.1299 TFLOPs
+  step   10/120  |  0.95 steps/s  |  11.6s elapsed  |  342.4292 TFLOPs
+  step   20/120  |  0.95 steps/s  |  22.2s elapsed  |  653.7284 TFLOPs
+  step   30/120  |  0.91 steps/s  |  34.0s elapsed  |  965.0276 TFLOPs
+  step   40/120  |  0.93 steps/s  |  44.1s elapsed  |  1276.3268 TFLOPs
+  step   50/120  |  0.93 steps/s  |  54.7s elapsed  |  1587.6261 TFLOPs
+  step   60/120  |  0.93 steps/s  |  65.9s elapsed  |  1898.9253 TFLOPs
+  step   70/120  |  0.92 steps/s  |  77.0s elapsed  |  2210.2245 TFLOPs
+  step   80/120  |  0.91 steps/s  |  88.9s elapsed  |  2521.5238 TFLOPs
+  step   90/120  |  0.91 steps/s  |  100.3s elapsed  |  2832.8230 TFLOPs
+  step  100/120  |  0.91 steps/s  |  111.0s elapsed  |  3144.1222 TFLOPs
+  step  110/120  |  0.91 steps/s  |  122.5s elapsed  |  3455.4214 TFLOPs
+
+[redteam] Done. 120 steps in 131.5s (0.91 steps/s)
+[redteam] Ground truth total : 3735.5908 TFLOPs
+[redteam] Ground truth rate  : 28.3978 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 3735.59 TFLOPs  | net 13652 J  | 133s  | gpu 99/99%  | NVLink 1228MB/step  | FRONTIER
+
+[6/11] S3_d1024_s512_b16_L12_h1  (fam S3)  fixed steps=120
+  Launching: torchrun x2  --steps 120 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 1 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 18:01:08.171000 96644 torch/distributed/run.py:766] 
+W0804 18:01:08.171000 96644 torch/distributed/run.py:766] *****************************************
+W0804 18:01:08.171000 96644 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 18:01:08.171000 96644 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=120, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=1, ff=4096, precision=fp16, opt=adamw
+/home/will/verification-games/.venv/lib/python3.12/site-packages/torch/nn/modules/transformer.py:382: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.num_heads is odd
+  warnings.warn(
+/home/will/verification-games/.venv/lib/python3.12/site-packages/torch/nn/modules/transformer.py:382: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.num_heads is odd
+  warnings.warn(
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 1954.3819 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/120  |  3.27 steps/s  |  0.3s elapsed  |  16.2865 TFLOPs
+  step   10/120  |  1.65 steps/s  |  6.7s elapsed  |  179.1517 TFLOPs
+  step   20/120  |  1.64 steps/s  |  12.8s elapsed  |  342.0168 TFLOPs
+  step   30/120  |  1.64 steps/s  |  18.9s elapsed  |  504.8820 TFLOPs
+  step   40/120  |  1.61 steps/s  |  25.5s elapsed  |  667.7472 TFLOPs
+  step   50/120  |  1.63 steps/s  |  31.2s elapsed  |  830.6123 TFLOPs
+  step   60/120  |  1.65 steps/s  |  37.0s elapsed  |  993.4775 TFLOPs
+  step   70/120  |  1.62 steps/s  |  43.9s elapsed  |  1156.3426 TFLOPs
+  step   80/120  |  1.61 steps/s  |  50.3s elapsed  |  1319.2078 TFLOPs
+  step   90/120  |  1.59 steps/s  |  57.1s elapsed  |  1482.0730 TFLOPs
+  step  100/120  |  1.57 steps/s  |  64.2s elapsed  |  1644.9381 TFLOPs
+  step  110/120  |  1.58 steps/s  |  70.2s elapsed  |  1807.8033 TFLOPs
+
+[redteam] Done. 120 steps in 76.5s (1.57 steps/s)
+[redteam] Ground truth total : 1954.3819 TFLOPs
+[redteam] Ground truth rate  : 25.5447 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 1954.38 TFLOPs  | net 8296 J  | 78s  | gpu 97/98%  | NVLink 2451MB/step  | FRONTIER
+
+[7/11] S3_d1024_s512_b16_L12_h2  (fam S3)  fixed steps=120
+  Launching: torchrun x2  --steps 120 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 2 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 18:02:32.074000 97028 torch/distributed/run.py:766] 
+W0804 18:02:32.074000 97028 torch/distributed/run.py:766] *****************************************
+W0804 18:02:32.074000 97028 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 18:02:32.074000 97028 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=120, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=2, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 1954.3819 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/120  |  2.72 steps/s  |  0.4s elapsed  |  16.2865 TFLOPs
+  step   10/120  |  1.79 steps/s  |  6.1s elapsed  |  179.1517 TFLOPs
+  step   20/120  |  1.72 steps/s  |  12.2s elapsed  |  342.0168 TFLOPs
+  step   30/120  |  1.65 steps/s  |  18.8s elapsed  |  504.8820 TFLOPs
+  step   40/120  |  1.63 steps/s  |  25.1s elapsed  |  667.7472 TFLOPs
+  step   50/120  |  1.63 steps/s  |  31.3s elapsed  |  830.6123 TFLOPs
+  step   60/120  |  1.59 steps/s  |  38.4s elapsed  |  993.4775 TFLOPs
+  step   70/120  |  1.56 steps/s  |  45.4s elapsed  |  1156.3426 TFLOPs
+  step   80/120  |  1.55 steps/s  |  52.1s elapsed  |  1319.2078 TFLOPs
+  step   90/120  |  1.55 steps/s  |  58.8s elapsed  |  1482.0730 TFLOPs
+  step  100/120  |  1.55 steps/s  |  65.3s elapsed  |  1644.9381 TFLOPs
+  step  110/120  |  1.53 steps/s  |  72.6s elapsed  |  1807.8033 TFLOPs
+
+[redteam] Done. 120 steps in 78.8s (1.52 steps/s)
+[redteam] Ground truth total : 1954.3819 TFLOPs
+[redteam] Ground truth rate  : 24.7905 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 1954.38 TFLOPs  | net 7983 J  | 80s  | gpu 98/99%  | NVLink 2478MB/step  | FRONTIER
+
+[8/11] S3_d1024_s512_b16_L12_h8  (fam S3)  fixed steps=120
+  Launching: torchrun x2  --steps 120 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 18:03:58.060000 97414 torch/distributed/run.py:766] 
+W0804 18:03:58.060000 97414 torch/distributed/run.py:766] *****************************************
+W0804 18:03:58.060000 97414 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 18:03:58.060000 97414 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=120, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 1954.3819 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/120  |  3.30 steps/s  |  0.3s elapsed  |  16.2865 TFLOPs
+  step   10/120  |  1.69 steps/s  |  6.5s elapsed  |  179.1517 TFLOPs
+  step   20/120  |  1.61 steps/s  |  13.0s elapsed  |  342.0168 TFLOPs
+  step   30/120  |  1.62 steps/s  |  19.1s elapsed  |  504.8820 TFLOPs
+  step   40/120  |  1.65 steps/s  |  24.8s elapsed  |  667.7472 TFLOPs
+  step   50/120  |  1.65 steps/s  |  30.9s elapsed  |  830.6123 TFLOPs
+  step   60/120  |  1.59 steps/s  |  38.3s elapsed  |  993.4775 TFLOPs
+  step   70/120  |  1.56 steps/s  |  45.4s elapsed  |  1156.3426 TFLOPs
+  step   80/120  |  1.57 steps/s  |  51.7s elapsed  |  1319.2078 TFLOPs
+  step   90/120  |  1.55 steps/s  |  58.7s elapsed  |  1482.0730 TFLOPs
+  step  100/120  |  1.55 steps/s  |  65.1s elapsed  |  1644.9381 TFLOPs
+  step  110/120  |  1.54 steps/s  |  72.0s elapsed  |  1807.8033 TFLOPs
+
+[redteam] Done. 120 steps in 77.1s (1.56 steps/s)
+[redteam] Ground truth total : 1954.3819 TFLOPs
+[redteam] Ground truth rate  : 25.3434 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 1954.38 TFLOPs  | net 8473 J  | 79s  | gpu 98/98%  | NVLink 2452MB/step  | FRONTIER
+
+[9/11] S3_d1024_s512_b16_L12_h32  (fam S3)  fixed steps=120
+  Launching: torchrun x2  --steps 120 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 32 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 18:05:22.670000 97803 torch/distributed/run.py:766] 
+W0804 18:05:22.670000 97803 torch/distributed/run.py:766] *****************************************
+W0804 18:05:22.670000 97803 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 18:05:22.670000 97803 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=120, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=32, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 1954.3819 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/120  |  2.14 steps/s  |  0.5s elapsed  |  16.2865 TFLOPs
+  step   10/120  |  1.54 steps/s  |  7.2s elapsed  |  179.1517 TFLOPs
+  step   20/120  |  1.50 steps/s  |  14.0s elapsed  |  342.0168 TFLOPs
+  step   30/120  |  1.49 steps/s  |  20.8s elapsed  |  504.8820 TFLOPs
+  step   40/120  |  1.45 steps/s  |  28.3s elapsed  |  667.7472 TFLOPs
+  step   50/120  |  1.43 steps/s  |  35.7s elapsed  |  830.6123 TFLOPs
+  step   60/120  |  1.42 steps/s  |  43.1s elapsed  |  993.4775 TFLOPs
+  step   70/120  |  1.42 steps/s  |  50.1s elapsed  |  1156.3426 TFLOPs
+  step   80/120  |  1.43 steps/s  |  56.7s elapsed  |  1319.2078 TFLOPs
+  step   90/120  |  1.43 steps/s  |  63.5s elapsed  |  1482.0730 TFLOPs
+  step  100/120  |  1.43 steps/s  |  70.7s elapsed  |  1644.9381 TFLOPs
+  step  110/120  |  1.42 steps/s  |  78.0s elapsed  |  1807.8033 TFLOPs
+
+[redteam] Done. 120 steps in 85.1s (1.41 steps/s)
+[redteam] Ground truth total : 1954.3819 TFLOPs
+[redteam] Ground truth rate  : 22.9761 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 1954.38 TFLOPs  | net 8484 J  | 87s  | gpu 98/98%  | NVLink 2446MB/step  | FRONTIER
+
+[10/11] S3_d1024_s512_b16_L12_h64  (fam S3)  fixed steps=120
+  Launching: torchrun x2  --steps 120 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 64 --dim-feedforward 4096 --precision fp16 --optimizer adamw
+W0804 18:06:55.267000 98215 torch/distributed/run.py:766] 
+W0804 18:06:55.267000 98215 torch/distributed/run.py:766] *****************************************
+W0804 18:06:55.267000 98215 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 18:06:55.267000 98215 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=120, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=64, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 1954.3819 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/120  |  1.72 steps/s  |  0.6s elapsed  |  16.2865 TFLOPs
+  step   10/120  |  1.31 steps/s  |  8.4s elapsed  |  179.1517 TFLOPs
+  step   20/120  |  1.28 steps/s  |  16.4s elapsed  |  342.0168 TFLOPs
+  step   30/120  |  1.24 steps/s  |  25.0s elapsed  |  504.8820 TFLOPs
+  step   40/120  |  1.23 steps/s  |  33.3s elapsed  |  667.7472 TFLOPs
+  step   50/120  |  1.21 steps/s  |  42.2s elapsed  |  830.6123 TFLOPs
+  step   60/120  |  1.19 steps/s  |  51.4s elapsed  |  993.4775 TFLOPs
+  step   70/120  |  1.18 steps/s  |  60.2s elapsed  |  1156.3426 TFLOPs
+  step   80/120  |  1.19 steps/s  |  68.2s elapsed  |  1319.2078 TFLOPs
+  step   90/120  |  1.18 steps/s  |  77.0s elapsed  |  1482.0730 TFLOPs
+  step  100/120  |  1.19 steps/s  |  84.9s elapsed  |  1644.9381 TFLOPs
+  step  110/120  |  1.18 steps/s  |  94.1s elapsed  |  1807.8033 TFLOPs
+
+[redteam] Done. 120 steps in 101.6s (1.18 steps/s)
+[redteam] Ground truth total : 1954.3819 TFLOPs
+[redteam] Ground truth rate  : 19.2453 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 1954.38 TFLOPs  | net 10282 J  | 103s  | gpu 99/99%  | NVLink 2430MB/step  | FRONTIER
+
+[11/11] S3_d1024_s512_b16_L12_sgd  (fam S3)  fixed steps=120
+  Launching: torchrun x2  --steps 120 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --optimizer sgd
+W0804 18:08:44.404000 98719 torch/distributed/run.py:766] 
+W0804 18:08:44.404000 98719 torch/distributed/run.py:766] *****************************************
+W0804 18:08:44.404000 98719 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0804 18:08:44.404000 98719 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=120, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=sgd
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 1954.3819 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/120  |  3.62 steps/s  |  0.3s elapsed  |  16.2865 TFLOPs
+  step   10/120  |  1.66 steps/s  |  6.6s elapsed  |  179.1517 TFLOPs
+  step   20/120  |  1.57 steps/s  |  13.4s elapsed  |  342.0168 TFLOPs
+  step   30/120  |  1.63 steps/s  |  19.0s elapsed  |  504.8820 TFLOPs
+  step   40/120  |  1.58 steps/s  |  25.9s elapsed  |  667.7472 TFLOPs
+  step   50/120  |  1.60 steps/s  |  31.8s elapsed  |  830.6123 TFLOPs
+  step   60/120  |  1.59 steps/s  |  38.4s elapsed  |  993.4775 TFLOPs
+  step   70/120  |  1.58 steps/s  |  45.1s elapsed  |  1156.3426 TFLOPs
+  step   80/120  |  1.58 steps/s  |  51.3s elapsed  |  1319.2078 TFLOPs
+  step   90/120  |  1.56 steps/s  |  58.5s elapsed  |  1482.0730 TFLOPs
+  step  100/120  |  1.57 steps/s  |  64.3s elapsed  |  1644.9381 TFLOPs
+  step  110/120  |  1.56 steps/s  |  71.3s elapsed  |  1807.8033 TFLOPs
+
+[redteam] Done. 120 steps in 77.5s (1.55 steps/s)
+[redteam] Ground truth total : 1954.3819 TFLOPs
+[redteam] Ground truth rate  : 25.2169 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  -> GT 1954.38 TFLOPs  | net 8099 J  | 79s  | gpu 98/98%  | NVLink 2429MB/step  | FRONTIER
+Records JSON written to red_team/red_v3_trial1_records.json
+
+Frontier runs (util >= 80%): 11 of 11 valid
+Split: random, seed=962353159  (7 train / 4 test)
+  TRAIN: S3_d1024_s512_b16_L12_h1, S3_d1024_s512_b16_L12_h2, S3_d1024_s512_b16_L12_h32, S3_d1024_s512_b16_L12_sgd, S4_d1024_s256_L6_b16, S4_d1024_s256_L6_b32, S4_d1024_s256_L6_b8
+  TEST : S3_d1024_s512_b16_L12_h64, S3_d1024_s512_b16_L12_h8, S4_d1024_s256_L6_b128, S4_d1024_s256_L6_b64
+
+Validation fit (TRAIN): E_MARGINAL=4.4247 J/TFLOP, P_OVERHEAD=0.0000 W
+Ship fit (ALL frontier): E_MARGINAL=4.3980 J/TFLOP, P_OVERHEAD=0.0000 W
+Validation fit EMC (TRAIN): E_MARGINAL=2.4040, E_PER_TB=79.9133, P_OVERHEAD=22.7500
+Ship fit EMC (ALL frontier): E_MARGINAL=2.2245, E_PER_TB=87.7814, P_OVERHEAD=25.5000
+
+Report written to red_team/red_v3_trial1.txt
+
+FAIL: held-out frontier max error = 18.90% (target < 10%)  [split: random, seed=962353159  (7 train / 4 test)]
