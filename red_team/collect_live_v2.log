@@ -1,0 +1,1589 @@
+
+===== none =====
+/home/will/verification-games/.venv/bin/python /home/will/verification-games/red_team/live_daemon_probe.py --d-model 1024 --seq-len 512 --batch-size 16 --num-layers 12 --nhead 8 --dim-feedforward 4096 --steps 160 --strategy none --label live_v2_none --out /home/will/verification-games/red_team/live_v2_none.json
+=== live_daemon_probe: strategy=none  db=/tmp/flop_log_probe_none_559857.db ===
+  [daemon] nvidia-smi power probe OK (GPU 0). DB: /tmp/flop_log_probe_none_559857.db
+  workload: --strategy none --steps 160 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16
+W0816 21:44:23.121000 559874 torch/distributed/run.py:766] 
+W0816 21:44:23.121000 559874 torch/distributed/run.py:766] *****************************************
+W0816 21:44:23.121000 559874 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0816 21:44:23.121000 559874 torch/distributed/run.py:766] *****************************************
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=160, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 2605.8426 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/160  |  3.66 steps/s  |  0.3s elapsed  |  16.2865 TFLOPs
+  step   10/160  |  3.41 steps/s  |  3.2s elapsed  |  179.1517 TFLOPs
+  step   20/160  |  3.42 steps/s  |  6.1s elapsed  |  342.0168 TFLOPs
+  step   30/160  |  3.43 steps/s  |  9.0s elapsed  |  504.8820 TFLOPs
+  step   40/160  |  3.43 steps/s  |  12.0s elapsed  |  667.7472 TFLOPs
+  step   50/160  |  3.42 steps/s  |  14.9s elapsed  |  830.6123 TFLOPs
+  step   60/160  |  3.36 steps/s  |  18.2s elapsed  |  993.4775 TFLOPs
+  step   70/160  |  3.28 steps/s  |  21.7s elapsed  |  1156.3426 TFLOPs
+  step   80/160  |  3.21 steps/s  |  25.2s elapsed  |  1319.2078 TFLOPs
+  step   90/160  |  3.22 steps/s  |  28.2s elapsed  |  1482.0730 TFLOPs
+  step  100/160  |  3.12 steps/s  |  32.4s elapsed  |  1644.9381 TFLOPs
+  step  110/160  |  3.09 steps/s  |  35.9s elapsed  |  1807.8033 TFLOPs
+  step  120/160  |  2.99 steps/s  |  40.5s elapsed  |  1970.6684 TFLOPs
+  step  130/160  |  2.92 steps/s  |  44.9s elapsed  |  2133.5336 TFLOPs
+  step  140/160  |  2.81 steps/s  |  50.2s elapsed  |  2296.3988 TFLOPs
+  step  150/160  |  2.75 steps/s  |  54.8s elapsed  |  2459.2639 TFLOPs
+
+[redteam] Done. 160 steps in 59.5s (2.69 steps/s)
+[redteam] Ground truth total : 2605.8426 TFLOPs
+[redteam] Ground truth rate  : 43.7694 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  waiting 10s for the daemon to close sessions...
+  [daemon] Calibration fingerprint OK: Tesla V100-SXM2-16GB | driver 580.159.03 | CUDA 13.0 (calibrated 2026-07-23)
+  [daemon] Daemon initialized. Monitoring GPU 0 for new ML workloads...
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=50870mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=50870mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=50870mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=50870mW | active_streak=0/2
+  [daemon] [quiet] gpu=7.0% | freq=1312MHz | idle_base=97890mW | observed_idle=97890mW | power=73010mW | active_streak=1/2
+  [daemon] 
+  [daemon] [!] NEW WORKLOAD DETECTED
+  [daemon]     Idle baseline : 97890 mW calibrated | observed quiet median: 97890 mW (4 quiet samples)
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 772.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 158560 mW  |  net 60670 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 62.441 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 62.441 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 19.6529 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 18.9514 TFLOPs  (0.2805 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 95.8744 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 862.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 98.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 137760 mW  |  net 39870 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 69.016 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 69.016 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 32.9965 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 24.6355 TFLOPs  (0.7502 TB moved, DRAM 33%)
+  [daemon] Roofline diagnostic total: 205.3600 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 937.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 134370 mW  |  net 36480 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 75.787 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 75.787 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 44.9271 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 29.1086 TFLOPs  (1.1939 TB moved, DRAM 32%)
+  [daemon] Roofline diagnostic total: 322.8435 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 780.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 157820 mW  |  net 59930 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 63.088 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 63.088 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 64.4855 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 42.6876 TFLOPs  (1.6784 TB moved, DRAM 35%)
+  [daemon] Roofline diagnostic total: 420.4359 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 907.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 132740 mW  |  net 34850 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 73.360 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 73.360 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 76.1282 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 46.3119 TFLOPs  (2.1402 TB moved, DRAM 32%)
+  [daemon] Roofline diagnostic total: 536.6054 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 832.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 171130 mW  |  net 73240 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 67.294 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 67.294 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 100.6516 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 66.1042 TFLOPs  (2.6401 TB moved, DRAM 35%)
+  [daemon] Roofline diagnostic total: 643.4096 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 847.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 138330 mW  |  net 40440 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 68.507 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 68.507 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 114.1995 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 71.7909 TFLOPs  (3.1203 TB moved, DRAM 34%)
+  [daemon] Roofline diagnostic total: 752.1960 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 937.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 131560 mW  |  net 33670 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 75.787 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 75.787 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 125.3709 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 74.2502 TFLOPs  (3.6030 TB moved, DRAM 34%)
+  [daemon] Roofline diagnostic total: 871.3848 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 780.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 138520 mW  |  net 40630 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 63.088 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 63.088 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 138.8461 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 80.3642 TFLOPs  (4.0628 TB moved, DRAM 32%)
+  [daemon] Roofline diagnostic total: 970.5630 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 885.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 134100 mW  |  net 36210 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 71.581 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 71.581 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 150.9863 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 84.2774 TFLOPs  (4.5391 TB moved, DRAM 33%)
+  [daemon] Roofline diagnostic total: 1084.3187 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 982.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 86980 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 80.229 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 80.229 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 150.9863 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 72.4974 TFLOPs  (4.9970 TB moved, DRAM 32%)
+  [daemon] Roofline diagnostic total: 1210.7116 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 825.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 160430 mW  |  net 62540 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 66.728 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 66.728 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 171.5694 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 87.6602 TFLOPs  (5.4730 TB moved, DRAM 34%)
+  [daemon] Roofline diagnostic total: 1314.8090 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 892.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 130600 mW  |  net 32710 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 72.147 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 72.147 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 182.2086 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 89.6196 TFLOPs  (5.9476 TB moved, DRAM 34%)
+  [daemon] Roofline diagnostic total: 1426.0397 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1140.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 153800 mW  |  net 55910 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 93.137 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 93.137 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 200.8400 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 105.8334 TFLOPs  (6.2816 TB moved, DRAM 24%)
+  [daemon] Roofline diagnostic total: 1573.1545 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 802.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 159470 mW  |  net 61580 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 64.868 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 64.868 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 220.9960 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 120.4946 TFLOPs  (6.7550 TB moved, DRAM 34%)
+  [daemon] Roofline diagnostic total: 1673.7950 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 982.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 164860 mW  |  net 66970 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 79.426 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 79.426 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 243.5187 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 139.3378 TFLOPs  (7.1883 TB moved, DRAM 30%)
+  [daemon] Roofline diagnostic total: 1800.4092 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 855.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 140920 mW  |  net 43030 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 69.154 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 69.154 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 257.4645 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 148.1618 TFLOPs  (7.5671 TB moved, DRAM 27%)
+  [daemon] Roofline diagnostic total: 1906.6448 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 855.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 161870 mW  |  net 63980 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 69.154 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 69.154 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 278.8678 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 164.1785 TFLOPs  (8.0523 TB moved, DRAM 34%)
+  [daemon] Roofline diagnostic total: 2016.3014 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 675.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.60s observed
+  [daemon] GPU power          : 154770 mW  |  net 56880 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 54.596 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 54.596 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 298.1063 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 178.6225 TFLOPs  (8.4866 TB moved, DRAM 30%)
+  [daemon] Roofline diagnostic total: 2103.8295 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 810.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 123450 mW  |  net 25560 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 66.176 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 66.176 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 306.4248 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 178.8775 TFLOPs  (8.9073 TB moved, DRAM 30%)
+  [daemon] Roofline diagnostic total: 2205.9160 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 615.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 126180 mW  |  net 28290 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 49.743 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 49.743 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 315.7931 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 186.0457 TFLOPs  (9.1135 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 2283.9946 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 742.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.62s observed
+  [daemon] GPU power          : 124820 mW  |  net 26930 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 60.015 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 60.015 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 325.0174 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 188.1793 TFLOPs  (9.5081 TB moved, DRAM 27%)
+  [daemon] Roofline diagnostic total: 2381.4347 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 757.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 98.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 129070 mW  |  net 31180 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 60.609 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 60.609 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 335.4040 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 190.7502 TFLOPs  (9.9458 TB moved, DRAM 31%)
+  [daemon] Roofline diagnostic total: 2477.1353 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 667.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 106650 mW  |  net 8760 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 53.949 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 53.949 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 338.2810 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 184.9586 TFLOPs  (10.3199 TB moved, DRAM 27%)
+  [daemon] Roofline diagnostic total: 2561.1196 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 742.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 125700 mW  |  net 27810 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 60.015 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 60.015 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 347.4151 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 191.7141 TFLOPs  (10.5300 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 2654.5521 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 720.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 125780 mW  |  net 27890 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 58.235 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 58.235 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 356.6670 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 193.7312 TFLOPs  (10.9305 TB moved, DRAM 28%)
+  [daemon] Roofline diagnostic total: 2746.1210 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 607.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 113880 mW  |  net 15990 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 49.096 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 49.096 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 361.8845 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 192.6578 TFLOPs  (11.2423 TB moved, DRAM 22%)
+  [daemon] Roofline diagnostic total: 2822.0552 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 510.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 146600 mW  |  net 48710 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 41.250 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 41.250 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 377.8096 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 205.9330 TFLOPs  (11.5506 TB moved, DRAM 22%)
+  [daemon] Roofline diagnostic total: 2885.9793 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 615.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.60s observed
+  [daemon] GPU power          : 116700 mW  |  net 18810 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 49.743 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 49.743 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 384.1471 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 205.4981 TFLOPs  (11.8955 TB moved, DRAM 24%)
+  [daemon] Roofline diagnostic total: 2965.4198 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 83110 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 107.190 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 107.190 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 384.1471 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 199.8747 TFLOPs  (12.1141 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 3133.4070 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 465.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 112840 mW  |  net 14950 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 37.610 TFLOPS (FP16, diagnostic)
+
+=== RESULT ===
+  honest GT (2-GPU aggregate) : 2605.8426
+  daemon sessions detected    : 1 (1 cleared the 80% gate)
+    session 0: dur 63s  peak_util 100%  est 417 TF  [frontier]
+  attributable (frontier only): 417 TF
+  largest single session      : 417 TF
+
+wrote /home/will/verification-games/red_team/live_v2_none.json
+----- none done rc=0 -> /home/will/verification-games/red_team/live_v2_none.json
+
+===== split =====
+/home/will/verification-games/.venv/bin/python /home/will/verification-games/red_team/live_daemon_probe.py --d-model 1024 --seq-len 512 --batch-size 16 --num-layers 12 --nhead 8 --dim-feedforward 4096 --steps 160 --strategy split --chunk-steps 40 --gap-seconds 6 --label live_v2_split --out /home/will/verification-games/red_team/live_v2_split.json
+=== live_daemon_probe: strategy=split  db=/tmp/flop_log_probe_split_560507.db ===
+  [daemon] nvidia-smi power probe OK (GPU 0). DB: /tmp/flop_log_probe_split_560507.db
+  workload: --strategy split --steps 160 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --chunk-steps 40 --gap-seconds 6.0
+W0816 21:45:42.398000 560528 torch/distributed/run.py:766] 
+W0816 21:45:42.398000 560528 torch/distributed/run.py:766] *****************************************
+W0816 21:45:42.398000 560528 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0816 21:45:42.398000 560528 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = split  (chunk=40 gap=6.0s target_util=70.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=160, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 2605.8426 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/160  |  3.67 steps/s  |  0.3s elapsed  |  16.2865 TFLOPs
+  step   10/160  |  3.30 steps/s  |  3.3s elapsed  |  179.1517 TFLOPs
+  step   20/160  |  2.83 steps/s  |  7.4s elapsed  |  342.0168 TFLOPs
+  step   30/160  |  2.66 steps/s  |  11.6s elapsed  |  504.8820 TFLOPs
+  step   40/160  |  1.93 steps/s  |  21.3s elapsed  |  667.7472 TFLOPs
+  step   50/160  |  2.01 steps/s  |  25.4s elapsed  |  830.6123 TFLOPs
+  step   60/160  |  2.05 steps/s  |  29.8s elapsed  |  993.4775 TFLOPs
+  step   70/160  |  2.07 steps/s  |  34.3s elapsed  |  1156.3426 TFLOPs
+  step   80/160  |  1.81 steps/s  |  44.8s elapsed  |  1319.2078 TFLOPs
+  step   90/160  |  1.86 steps/s  |  48.9s elapsed  |  1482.0730 TFLOPs
+  step  100/160  |  1.88 steps/s  |  53.8s elapsed  |  1644.9381 TFLOPs
+  step  110/160  |  1.87 steps/s  |  59.2s elapsed  |  1807.8033 TFLOPs
+  step  120/160  |  1.72 steps/s  |  70.4s elapsed  |  1970.6684 TFLOPs
+  step  130/160  |  1.73 steps/s  |  75.7s elapsed  |  2133.5336 TFLOPs
+  step  140/160  |  1.74 steps/s  |  80.9s elapsed  |  2296.3988 TFLOPs
+  step  150/160  |  1.74 steps/s  |  86.7s elapsed  |  2459.2639 TFLOPs
+
+[redteam] Done. 160 steps in 91.7s (1.74 steps/s)
+[redteam] Ground truth total : 2605.8426 TFLOPs
+[redteam] Ground truth rate  : 28.4147 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  waiting 10s for the daemon to close sessions...
+  [daemon] Calibration fingerprint OK: Tesla V100-SXM2-16GB | driver 580.159.03 | CUDA 13.0 (calibrated 2026-07-23)
+  [daemon] Daemon initialized. Monitoring GPU 0 for new ML workloads...
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=54230mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=54230mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=53740mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=53780mW | active_streak=0/2
+  [daemon] [quiet] gpu=29.0% | freq=1312MHz | idle_base=97890mW | observed_idle=97890mW | power=76400mW | active_streak=1/2
+  [daemon] 
+  [daemon] [!] NEW WORKLOAD DETECTED
+  [daemon]     Idle baseline : 97890 mW calibrated | observed quiet median: 97890 mW (4 quiet samples)
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 990.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 98.0%
+  [daemon] Poll interval      : 1.53s observed
+  [daemon] GPU power          : 135930 mW  |  net 38040 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 79.265 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 79.265 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 12.3139 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 16.3955 TFLOPs  (0.0000 TB moved, DRAM 0%)
+  [daemon] Roofline diagnostic total: 121.6227 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 885.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 138610 mW  |  net 40720 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 71.581 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 71.581 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 25.5188 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 22.7683 TFLOPs  (0.4358 TB moved, DRAM 32%)
+  [daemon] Roofline diagnostic total: 231.6499 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 922.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 133320 mW  |  net 35430 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 74.574 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 74.574 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 37.2757 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 26.3332 TFLOPs  (0.9058 TB moved, DRAM 33%)
+  [daemon] Roofline diagnostic total: 348.9466 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 810.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 133880 mW  |  net 35990 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 65.515 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 65.515 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 49.3248 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 40.2822 TFLOPs  (0.9872 TB moved, DRAM 6%)
+  [daemon] Roofline diagnostic total: 452.9126 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 667.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 164750 mW  |  net 66860 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 53.949 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 53.949 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 71.4620 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 59.2934 TFLOPs  (1.3939 TB moved, DRAM 29%)
+  [daemon] Roofline diagnostic total: 537.5794 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 877.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.63s observed
+  [daemon] GPU power          : 150720 mW  |  net 52830 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 70.934 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 70.934 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 89.5984 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 71.9142 TFLOPs  (1.8421 TB moved, DRAM 31%)
+  [daemon] Roofline diagnostic total: 653.0052 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1530.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 100440 mW  |  net 2550 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 125.000 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 125.000 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 90.4421 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 61.7097 TFLOPs  (2.2825 TB moved, DRAM 31%)
+  [daemon] Roofline diagnostic total: 849.0495 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 937.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 130510 mW  |  net 32620 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 75.787 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 75.787 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 101.0482 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 73.1198 TFLOPs  (2.3879 TB moved, DRAM 8%)
+  [daemon] Roofline diagnostic total: 965.8493 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 705.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 131560 mW  |  net 33670 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 57.022 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 57.022 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 112.2948 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 77.8314 TFLOPs  (2.7869 TB moved, DRAM 28%)
+  [daemon] Roofline diagnostic total: 1056.1306 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 645.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.61s observed
+  [daemon] GPU power          : 118550 mW  |  net 20660 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 52.169 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 52.169 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 119.2952 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 77.8569 TFLOPs  (3.1483 TB moved, DRAM 25%)
+  [daemon] Roofline diagnostic total: 1139.9195 TFLOPs
+  [daemon] 
+  [daemon] [---] Workload completed or detached.
+  [daemon]       Duration           : 18.9s  (10 active polls)
+  [daemon]       Power est.         : 119.2952 TFLOPs  (4.74 J/TFLOP)
+  [daemon]       Power est. (EMC)   : 77.8569 TFLOPs  (3.1483 TB moved)
+  [daemon]       Roofline diagnostic: 1139.9195 TFLOPs  (FP16)
+  [daemon]       Peak util          : 100.0%
+  [daemon]       Avg power          : 133827 mW  |  Avg net: 35937 mW  |  Peak: 164750 mW
+  [daemon]       Returning to quiet loop.
+  [daemon] [quiet] gpu=0.0% | freq=1312MHz | idle_base=97890mW | observed_idle=54230mW | power=77360mW | active_streak=0/2
+  [daemon] [quiet] gpu=100.0% | freq=1447MHz | idle_base=97890mW | observed_idle=54230mW | power=91320mW | active_streak=1/2
+  [daemon] 
+  [daemon] [!] NEW WORKLOAD DETECTED
+  [daemon]     Idle baseline : 97890 mW calibrated | observed quiet median: 54230 mW (6 quiet samples)
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 660.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 141980 mW  |  net 44090 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 53.382 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 53.382 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 14.3536 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 13.4670 TFLOPs  (0.2194 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 82.3752 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 697.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 120480 mW  |  net 22590 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 56.375 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 56.375 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 21.8915 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 13.7271 TFLOPs  (0.5995 TB moved, DRAM 27%)
+  [daemon] Roofline diagnostic total: 171.5414 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 727.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 120960 mW  |  net 23070 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 59.395 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 59.395 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 29.5248 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 14.5233 TFLOPs  (0.9637 TB moved, DRAM 26%)
+  [daemon] Roofline diagnostic total: 264.6940 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 307.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 81120 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 25.082 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 25.082 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 29.5248 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 5.2052 TFLOPs  (1.3259 TB moved, DRAM 26%)
+  [daemon] Roofline diagnostic total: 304.2846 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 675.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 120480 mW  |  net 22590 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 54.596 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 54.596 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 37.0262 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 11.2577 TFLOPs  (1.4789 TB moved, DRAM 11%)
+  [daemon] Roofline diagnostic total: 390.2187 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 532.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 124170 mW  |  net 26280 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 43.464 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 43.464 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 45.7140 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 15.7877 TFLOPs  (1.7525 TB moved, DRAM 19%)
+  [daemon] Roofline diagnostic total: 458.3255 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 525.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.60s observed
+  [daemon] GPU power          : 110360 mW  |  net 12470 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 42.463 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 42.463 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 49.9212 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 13.5039 TFLOPs  (2.0591 TB moved, DRAM 21%)
+  [daemon] Roofline diagnostic total: 526.2325 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 682.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 111030 mW  |  net 13140 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 55.719 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 55.719 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 54.3415 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 11.4898 TFLOPs  (2.3662 TB moved, DRAM 21%)
+  [daemon] Roofline diagnostic total: 615.0789 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 540.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 107130 mW  |  net 9240 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 43.676 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 43.676 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 57.3813 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 7.8480 TFLOPs  (2.6651 TB moved, DRAM 21%)
+  [daemon] Roofline diagnostic total: 683.1877 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 555.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.63s observed
+  [daemon] GPU power          : 106090 mW  |  net 8200 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 45.343 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 45.343 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 60.2028 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 3.1093 TFLOPs  (2.9954 TB moved, DRAM 22%)
+  [daemon] Roofline diagnostic total: 757.1419 TFLOPs
+  [daemon] 
+  [daemon] [---] Workload completed or detached.
+  [daemon]       Duration           : 18.9s  (10 active polls)
+  [daemon]       Power est.         : 60.2028 TFLOPs  (4.74 J/TFLOP)
+  [daemon]       Power est. (EMC)   : 3.1093 TFLOPs  (2.9954 TB moved)
+  [daemon]       Roofline diagnostic: 757.1419 TFLOPs  (FP16)
+  [daemon]       Peak util          : 100.0%
+  [daemon]       Avg power          : 114380 mW  |  Avg net: 18167 mW  |  Peak: 141980 mW
+  [daemon]       Returning to quiet loop.
+  [daemon] [quiet] gpu=0.0% | freq=1312MHz | idle_base=97890mW | observed_idle=65795mW | power=77850mW | active_streak=0/2
+  [daemon] [quiet] gpu=100.0% | freq=862MHz | idle_base=97890mW | observed_idle=65795mW | power=134850mW | active_streak=1/2
+  [daemon] 
+  [daemon] [!] NEW WORKLOAD DETECTED
+  [daemon]     Idle baseline : 97890 mW calibrated | observed quiet median: 65795 mW (8 quiet samples)
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 622.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 98.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 111880 mW  |  net 13990 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 49.801 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 49.801 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 4.5951 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : -2.0273 TFLOPs  (0.3167 TB moved, DRAM 23%)
+  [daemon] Roofline diagnostic total: 77.5344 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1275.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.63s observed
+  [daemon] GPU power          : 74460 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 104.167 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 104.167 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 4.5951 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : -10.4689 TFLOPs  (0.6449 TB moved, DRAM 22%)
+  [daemon] Roofline diagnostic total: 247.1078 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 397.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 87400 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 32.110 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 32.110 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 4.5951 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : -17.5789 TFLOPs  (0.9213 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 296.9155 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 832.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.64s observed
+  [daemon] GPU power          : 145440 mW  |  net 47550 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 67.294 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 67.294 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 21.0479 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : -1.1021 TFLOPs  (1.1324 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 407.2834 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 502.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 107130 mW  |  net 9240 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 40.603 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 40.603 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 24.0426 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : -4.4055 TFLOPs  (1.4158 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 469.6612 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 855.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.60s observed
+  [daemon] GPU power          : 135810 mW  |  net 37920 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 69.154 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 69.154 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 36.8194 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 6.3579 TFLOPs  (1.6587 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 580.1077 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 577.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 118070 mW  |  net 20180 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 47.141 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 47.141 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 43.4581 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 5.8475 TFLOPs  (2.0222 TB moved, DRAM 26%)
+  [daemon] Roofline diagnostic total: 653.6152 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 592.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.62s observed
+  [daemon] GPU power          : 85040 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 48.366 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 48.366 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 43.4581 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 1.0580 TFLOPs  (2.2084 TB moved, DRAM 13%)
+  [daemon] Roofline diagnostic total: 731.7905 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 345.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 139480 mW  |  net 41590 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 27.904 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 27.904 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 57.2015 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 13.2651 TFLOPs  (2.4452 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 775.4981 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 487.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 105130 mW  |  net 7240 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 39.390 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 39.390 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 59.6308 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 8.1418 TFLOPs  (2.7701 TB moved, DRAM 23%)
+  [daemon] Roofline diagnostic total: 838.1446 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 502.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 111470 mW  |  net 13580 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 40.603 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 40.603 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 64.1394 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 6.9314 TFLOPs  (3.0506 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 902.0413 TFLOPs
+  [daemon] 
+  [daemon] [---] Workload completed or detached.
+  [daemon]       Duration           : 20.5s  (11 active polls)
+  [daemon]       Power est.         : 64.1394 TFLOPs  (4.74 J/TFLOP)
+  [daemon]       Power est. (EMC)   : 6.9314 TFLOPs  (3.0506 TB moved)
+  [daemon]       Roofline diagnostic: 902.0413 TFLOPs  (FP16)
+  [daemon]       Peak util          : 100.0%
+  [daemon]       Avg power          : 111028 mW  |  Avg net: 17390 mW  |  Peak: 145440 mW
+  [daemon]       Returning to quiet loop.
+  [daemon] [quiet] gpu=0.0% | freq=1312MHz | idle_base=97890mW | observed_idle=77360mW | power=78810mW | active_streak=0/2
+  [daemon] [quiet] gpu=99.0% | freq=690MHz | idle_base=97890mW | observed_idle=77360mW | power=123370mW | active_streak=1/2
+  [daemon] 
+  [daemon] [!] NEW WORKLOAD DETECTED
+  [daemon]     Idle baseline : 97890 mW calibrated | observed quiet median: 77360 mW (10 quiet samples)
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 847.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 130430 mW  |  net 32540 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 69.199 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 69.199 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 10.7117 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 8.0131 TFLOPs  (0.2429 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 107.9742 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 480.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 126180 mW  |  net 28290 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 38.824 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 38.824 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 20.0694 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 12.8866 TFLOPs  (0.5379 TB moved, DRAM 21%)
+  [daemon] Roofline diagnostic total: 168.8456 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1387.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.62s observed
+  [daemon] GPU power          : 85530 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 113.317 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 113.317 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 20.0694 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 5.4207 TFLOPs  (0.8281 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 352.4879 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 562.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 107060 mW  |  net 9170 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 45.915 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 45.915 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 23.0473 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 5.6440 TFLOPs  (0.9736 TB moved, DRAM 10%)
+  [daemon] Roofline diagnostic total: 423.1640 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 465.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 101340 mW  |  net 3450 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 37.610 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 37.610 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 24.1920 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 0.7242 TFLOPs  (1.2241 TB moved, DRAM 18%)
+  [daemon] Roofline diagnostic total: 482.3108 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 555.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.62s observed
+  [daemon] GPU power          : 114850 mW  |  net 16960 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 44.890 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 44.890 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 29.9995 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 1.3175 TFLOPs  (1.5016 TB moved, DRAM 19%)
+  [daemon] Roofline diagnostic total: 555.1712 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1245.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.60s observed
+  [daemon] GPU power          : 64830 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 101.716 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 101.716 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 29.9995 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : -6.6373 TFLOPs  (1.8109 TB moved, DRAM 22%)
+  [daemon] Roofline diagnostic total: 717.7378 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 825.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 126260 mW  |  net 28370 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 66.728 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 66.728 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 39.3083 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : -0.0038 TFLOPs  (2.0349 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 821.5198 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 457.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 111400 mW  |  net 13510 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 37.337 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 37.337 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 43.7627 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 0.7895 TFLOPs  (2.2346 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 879.8698 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 637.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.62s observed
+  [daemon] GPU power          : 119030 mW  |  net 21140 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 51.522 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 51.522 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 50.9751 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 7.0981 TFLOPs  (2.3627 TB moved, DRAM 9%)
+  [daemon] Roofline diagnostic total: 963.1898 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 855.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 132530 mW  |  net 34640 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 69.154 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 69.154 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 62.2362 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 13.4948 TFLOPs  (2.6969 TB moved, DRAM 24%)
+  [daemon] Roofline diagnostic total: 1069.7515 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1237.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 68660 mW  |  net 0 mW above idle 97890 mW
+
+=== RESULT ===
+  honest GT (2-GPU aggregate) : 2605.8426
+  daemon sessions detected    : 4 (4 cleared the 80% gate)
+    session 0: dur 19s  peak_util 100%  est 119 TF  [frontier]
+    session 1: dur 19s  peak_util 100%  est 60 TF  [frontier]
+    session 2: dur 21s  peak_util 100%  est 64 TF  [frontier]
+    session 3: dur 24s  peak_util 100%  est 62 TF  [frontier]
+  attributable (frontier only): 306 TF
+  largest single session      : 119 TF
+
+wrote /home/will/verification-games/red_team/live_v2_split.json
+----- split done rc=0 -> /home/will/verification-games/red_team/live_v2_split.json
+
+===== throttle =====
+/home/will/verification-games/.venv/bin/python /home/will/verification-games/red_team/live_daemon_probe.py --d-model 1024 --seq-len 512 --batch-size 16 --num-layers 12 --nhead 8 --dim-feedforward 4096 --steps 160 --strategy throttle --target-util 65 --label live_v2_throttle --out /home/will/verification-games/red_team/live_v2_throttle.json
+=== live_daemon_probe: strategy=throttle  db=/tmp/flop_log_probe_throttle_561492.db ===
+  [daemon] nvidia-smi power probe OK (GPU 0). DB: /tmp/flop_log_probe_throttle_561492.db
+  workload: --strategy throttle --steps 160 --batch-size 16 --seq-len 512 --d-model 1024 --num-layers 12 --nhead 8 --dim-feedforward 4096 --precision fp16 --target-util 65.0
+W0816 21:47:34.159000 561514 torch/distributed/run.py:766] 
+W0816 21:47:34.159000 561514 torch/distributed/run.py:766] *****************************************
+W0816 21:47:34.159000 561514 torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0816 21:47:34.159000 561514 torch/distributed/run.py:766] *****************************************
+[redteam] STRATEGY = throttle  (chunk=100 gap=6.0s target_util=65.0%)
+[redteam] Device : Tesla V100-SXM2-16GB × 2 (DDP)
+[redteam] Config : steps=160, batch/gpu=16, global_batch=32, seq=512, d_model=1024, layers=12, nhead=8, ff=4096, precision=fp16, opt=adamw
+[redteam] Params : 152204288 (152.2M)
+[redteam] FLOPs/step/gpu (fwd+bwd) : 8143.258 GFLOPs
+[redteam] Ground truth total    : 2605.8426 TFLOPs  (2 ranks)
+[redteam] Starting workload...
+
+  step    0/160  |  3.62 steps/s  |  0.3s elapsed  |  16.2865 TFLOPs
+  step   10/160  |  2.12 steps/s  |  5.2s elapsed  |  179.1517 TFLOPs
+  step   20/160  |  2.14 steps/s  |  9.8s elapsed  |  342.0168 TFLOPs
+  step   30/160  |  1.90 steps/s  |  16.3s elapsed  |  504.8820 TFLOPs
+  step   40/160  |  1.85 steps/s  |  22.2s elapsed  |  667.7472 TFLOPs
+  step   50/160  |  1.85 steps/s  |  27.6s elapsed  |  830.6123 TFLOPs
+  step   60/160  |  1.77 steps/s  |  34.5s elapsed  |  993.4775 TFLOPs
+  step   70/160  |  1.74 steps/s  |  40.9s elapsed  |  1156.3426 TFLOPs
+  step   80/160  |  1.68 steps/s  |  48.1s elapsed  |  1319.2078 TFLOPs
+  step   90/160  |  1.66 steps/s  |  54.9s elapsed  |  1482.0730 TFLOPs
+  step  100/160  |  1.61 steps/s  |  62.9s elapsed  |  1644.9381 TFLOPs
+  step  110/160  |  1.55 steps/s  |  71.4s elapsed  |  1807.8033 TFLOPs
+  step  120/160  |  1.53 steps/s  |  79.1s elapsed  |  1970.6684 TFLOPs
+  step  130/160  |  1.50 steps/s  |  87.1s elapsed  |  2133.5336 TFLOPs
+  step  140/160  |  1.50 steps/s  |  94.2s elapsed  |  2296.3988 TFLOPs
+  step  150/160  |  1.47 steps/s  |  102.6s elapsed  |  2459.2639 TFLOPs
+
+[redteam] Done. 160 steps in 110.3s (1.45 steps/s)
+[redteam] Ground truth total : 2605.8426 TFLOPs
+[redteam] Ground truth rate  : 23.6182 TFLOPS avg
+[redteam] Compare 'Monitor est.' above to ground truth total.
+[redteam] all-reduce probe: OK
+  waiting 10s for the daemon to close sessions...
+  [daemon] Calibration fingerprint OK: Tesla V100-SXM2-16GB | driver 580.159.03 | CUDA 13.0 (calibrated 2026-07-23)
+  [daemon] Daemon initialized. Monitoring GPU 0 for new ML workloads...
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=54710mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=54260mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=54230mW | active_streak=0/2
+  [daemon] [quiet] gpu=0.0% | freq=135MHz | idle_base=97890mW | observed_idle=97890mW | power=54230mW | active_streak=0/2
+  [daemon] [quiet] gpu=82.0% | freq=1312MHz | idle_base=97890mW | observed_idle=97890mW | power=77310mW | active_streak=1/2
+  [daemon] 
+  [daemon] [!] NEW WORKLOAD DETECTED
+  [daemon]     Idle baseline : 97890 mW calibrated | observed quiet median: 97890 mW (4 quiet samples)
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1080.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 75.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 148700 mW  |  net 50810 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 66.176 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 66.176 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 16.5285 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 22.0071 TFLOPs  (0.0000 TB moved, DRAM 0%)
+  [daemon] Roofline diagnostic total: 102.0393 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1522.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 45.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 95610 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 55.956 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 55.956 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 16.5285 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 16.1278 TFLOPs  (0.2286 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 188.6911 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1455.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 48.0%
+  [daemon] Poll interval      : 1.53s observed
+  [daemon] GPU power          : 88910 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 57.059 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 57.059 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 16.5285 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 9.5614 TFLOPs  (0.4839 TB moved, DRAM 18%)
+  [daemon] Roofline diagnostic total: 276.1749 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 757.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 64.0%
+  [daemon] Poll interval      : 1.53s observed
+  [daemon] GPU power          : 131390 mW  |  net 33500 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 39.582 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 39.582 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 27.3541 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 15.4294 TFLOPs  (0.8161 TB moved, DRAM 24%)
+  [daemon] Roofline diagnostic total: 336.8033 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1170.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 83.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 244600 mW  |  net 146710 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 79.338 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 79.338 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 76.5670 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 73.7032 TFLOPs  (1.0980 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 462.9513 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 855.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 131480 mW  |  net 33590 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 69.154 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 69.154 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 87.8418 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 80.5016 TFLOPs  (1.4173 TB moved, DRAM 22%)
+  [daemon] Roofline diagnostic total: 572.9777 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 70110 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 106.118 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 106.118 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 87.8418 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 73.1103 TFLOPs  (1.7047 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 739.0602 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 89.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 80260 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 95.399 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 95.399 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 87.8418 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 67.4450 TFLOPs  (1.9249 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 885.8932 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 892.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 8.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 133880 mW  |  net 35990 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 5.830 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 5.830 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 99.5978 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 77.7211 TFLOPs  (2.1339 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 894.9199 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 63.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 78660 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 67.529 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 67.529 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 99.5978 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 70.6340 TFLOPs  (2.4095 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 999.3317 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 780.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 68.0%
+  [daemon] Poll interval      : 1.53s observed
+  [daemon] GPU power          : 127140 mW  |  net 29250 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 43.333 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 43.333 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 109.0628 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 77.4840 TFLOPs  (2.6331 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 1065.7975 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 17.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 79250 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 18.222 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 18.222 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 109.0628 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 70.3429 TFLOPs  (2.9107 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 1094.3310 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 525.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 105200 mW  |  net 7310 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 42.463 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 42.463 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 111.4358 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 68.1592 TFLOPs  (3.1184 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 1159.6694 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 14.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 79780 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 15.007 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 15.007 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 111.4358 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 60.3094 TFLOPs  (3.4236 TB moved, DRAM 22%)
+  [daemon] Roofline diagnostic total: 1182.7991 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 24.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 79780 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 25.725 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 25.725 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 111.4358 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 53.8731 TFLOPs  (3.6738 TB moved, DRAM 18%)
+  [daemon] Roofline diagnostic total: 1222.3148 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 780.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 124330 mW  |  net 26440 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 63.088 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 63.088 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 120.0281 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 59.6435 TFLOPs  (3.8943 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 1319.4936 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 585.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 78.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 132830 mW  |  net 34940 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 37.279 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 37.279 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 131.3885 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 68.7042 TFLOPs  (4.1301 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 1376.9478 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 442.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 9.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 84500 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 3.250 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 3.250 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 131.3885 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 61.7408 TFLOPs  (4.4008 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 1381.9611 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1290.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 72.0%
+  [daemon] Poll interval      : 1.62s observed
+  [daemon] GPU power          : 67250 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 75.882 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 75.882 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 131.3885 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 58.7026 TFLOPs  (4.5189 TB moved, DRAM 8%)
+  [daemon] Roofline diagnostic total: 1504.9086 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 615.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 79.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 122890 mW  |  net 25000 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 39.694 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 39.694 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 139.5480 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 64.3735 TFLOPs  (4.7208 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 1566.3155 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 645.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 41.0%
+  [daemon] Poll interval      : 1.59s observed
+  [daemon] GPU power          : 120480 mW  |  net 22590 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 21.605 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 21.605 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 147.1401 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 70.8311 TFLOPs  (4.8627 TB moved, DRAM 10%)
+  [daemon] Roofline diagnostic total: 1600.7336 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 367.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.61s observed
+  [daemon] GPU power          : 103610 mW  |  net 5720 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 29.984 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 29.984 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 149.0881 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 68.4545 TFLOPs  (5.0560 TB moved, DRAM 13%)
+  [daemon] Roofline diagnostic total: 1649.1370 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1380.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 56.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 84080 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 63.137 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 63.137 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 149.0881 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 64.1035 TFLOPs  (5.2251 TB moved, DRAM 12%)
+  [daemon] Roofline diagnostic total: 1746.4051 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 915.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.53s observed
+  [daemon] GPU power          : 133010 mW  |  net 35120 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 74.755 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 74.755 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 160.4482 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 73.3014 TFLOPs  (5.4556 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 1861.0205 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 487.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 21.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 110920 mW  |  net 13030 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 8.355 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 8.355 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 164.7473 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 73.5224 TFLOPs  (5.6695 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 1874.0877 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 322.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 77690 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 26.307 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 26.307 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 164.7473 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 70.4932 TFLOPs  (5.7873 TB moved, DRAM 8%)
+  [daemon] Roofline diagnostic total: 1915.5619 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 93.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 77360 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 99.686 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 99.686 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 164.7473 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 63.6201 TFLOPs  (6.0545 TB moved, DRAM 19%)
+  [daemon] Roofline diagnostic total: 2068.9099 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 15.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 80210 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 16.078 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 16.078 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 164.7473 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 58.3801 TFLOPs  (6.2582 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 2093.6674 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 900.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 90.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 132440 mW  |  net 34550 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 66.176 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 66.176 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 175.9388 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 68.9447 TFLOPs  (6.4268 TB moved, DRAM 12%)
+  [daemon] Roofline diagnostic total: 2195.2736 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1462.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 46.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 91260 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 54.944 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 54.944 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 175.9388 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 61.8516 TFLOPs  (6.7025 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 2280.2985 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 922.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 85.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 134370 mW  |  net 36480 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 64.028 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 64.028 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 187.8102 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 72.4445 TFLOPs  (6.9052 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 2379.0619 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 705.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 124730 mW  |  net 26840 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 57.022 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 57.022 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 196.7055 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 80.8333 TFLOPs  (7.0395 TB moved, DRAM 10%)
+  [daemon] Roofline diagnostic total: 2468.6389 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 27.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 79250 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 28.941 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 28.941 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 196.7055 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 75.6438 TFLOPs  (7.2413 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 2513.3820 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 832.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 129720 mW  |  net 31830 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 67.294 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 67.294 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 207.0852 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 83.5240 TFLOPs  (7.4722 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 2617.3994 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 397.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 78330 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 32.435 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 32.435 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 207.0852 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 76.4137 TFLOPs  (7.7486 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 2667.9682 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 885.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 67.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 133320 mW  |  net 35430 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 48.444 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 48.444 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 218.9202 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 86.3434 TFLOPs  (7.9752 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 2744.6710 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 195.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 66730 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 15.931 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 15.931 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 218.9202 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 80.8209 TFLOPs  (8.1899 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 2769.6743 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 29.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 74460 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 31.085 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 31.085 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 218.9202 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 77.3679 TFLOPs  (8.3242 TB moved, DRAM 10%)
+  [daemon] Roofline diagnostic total: 2817.4737 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1215.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 95.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 90300 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 94.301 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 94.301 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 218.9202 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 72.5450 TFLOPs  (8.5117 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 2963.0004 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 345.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.63s observed
+  [daemon] GPU power          : 82630 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 28.186 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 28.186 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 218.9202 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 70.0130 TFLOPs  (8.6101 TB moved, DRAM 7%)
+  [daemon] Roofline diagnostic total: 3009.0129 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 540.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 112690 mW  |  net 14800 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 43.676 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 43.676 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 223.7392 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 69.3549 TFLOPs  (8.8851 TB moved, DRAM 20%)
+  [daemon] Roofline diagnostic total: 3076.4226 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 502.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 30.0%
+  [daemon] Poll interval      : 1.63s observed
+  [daemon] GPU power          : 112060 mW  |  net 14170 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 12.304 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 12.304 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 228.6089 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 71.6906 TFLOPs  (9.0464 TB moved, DRAM 11%)
+  [daemon] Roofline diagnostic total: 3096.4653 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 750.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 28.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 124820 mW  |  net 26930 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 17.157 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 17.157 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 237.3510 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 79.1983 TFLOPs  (9.2070 TB moved, DRAM 12%)
+  [daemon] Roofline diagnostic total: 3122.8647 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 82630 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 107.190 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 107.190 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 237.3510 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 73.9711 TFLOPs  (9.4103 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 3292.1182 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 742.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 75.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 124330 mW  |  net 26440 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 45.466 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 45.466 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 245.9633 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 80.8630 TFLOPs  (9.5881 TB moved, DRAM 13%)
+  [daemon] Roofline diagnostic total: 3362.3154 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 472.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 53.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 147370 mW  |  net 49480 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 20.438 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 20.438 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 262.0552 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 98.5415 TFLOPs  (9.7338 TB moved, DRAM 10%)
+  [daemon] Roofline diagnostic total: 3393.8213 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1432.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.57s observed
+  [daemon] GPU power          : 91200 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 116.993 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 116.993 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 262.0552 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 93.6483 TFLOPs  (9.9240 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 3576.9980 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 495.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 113810 mW  |  net 15920 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 40.037 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 40.037 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 97.0269 TFLOPs  (10.0621 TB moved, DRAM 10%)
+  [daemon] Roofline diagnostic total: 3639.0456 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 89.0%
+  [daemon] Poll interval      : 1.67s observed
+  [daemon] GPU power          : 79730 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 95.399 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 95.399 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 90.9503 TFLOPs  (10.2984 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 3798.5436 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 262.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 92.0%
+  [daemon] Poll interval      : 1.53s observed
+  [daemon] GPU power          : 71950 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 19.693 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 19.693 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 85.7271 TFLOPs  (10.5014 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 3828.7689 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1035.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 99.0%
+  [daemon] Poll interval      : 1.64s observed
+  [daemon] GPU power          : 65760 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 83.713 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 83.713 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 82.1633 TFLOPs  (10.6400 TB moved, DRAM 9%)
+  [daemon] Roofline diagnostic total: 3965.8672 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1342.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 84560 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 109.641 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 109.641 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 76.6504 TFLOPs  (10.8543 TB moved, DRAM 15%)
+  [daemon] Roofline diagnostic total: 4135.4101 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 765.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 79.0%
+  [daemon] Poll interval      : 1.56s observed
+  [daemon] GPU power          : 65320 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 49.375 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 49.375 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 70.4182 TFLOPs  (11.0966 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 4212.2442 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1215.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 6.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 76880 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 5.956 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 5.956 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 65.4138 TFLOPs  (11.2911 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 4221.4407 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1207.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 88.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 64350 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 86.778 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 86.778 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 63.1739 TFLOPs  (11.3782 TB moved, DRAM 6%)
+  [daemon] Roofline diagnostic total: 4354.7143 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 37.0%
+  [daemon] Poll interval      : 1.55s observed
+  [daemon] GPU power          : 79780 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 39.660 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 39.660 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 267.2603 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 59.8443 TFLOPs  (11.5077 TB moved, DRAM 9%)
+  [daemon] Roofline diagnostic total: 4416.0499 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 847.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 77.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 127230 mW  |  net 29340 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 53.283 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 53.283 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 276.7810 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 66.6099 TFLOPs  (11.7375 TB moved, DRAM 17%)
+  [daemon] Roofline diagnostic total: 4498.0058 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 615.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 52.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 120000 mW  |  net 22110 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 26.127 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 26.127 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 283.9617 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 71.8942 TFLOPs  (11.9037 TB moved, DRAM 12%)
+  [daemon] Roofline diagnostic total: 4538.2267 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1312.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 97.0%
+  [daemon] Poll interval      : 1.60s observed
+  [daemon] GPU power          : 78810 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 103.974 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 103.974 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 283.9617 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 68.4423 TFLOPs  (12.0379 TB moved, DRAM 9%)
+  [daemon] Roofline diagnostic total: 4704.9349 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 1230.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 43.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 75430 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 43.211 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 43.211 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 283.9617 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 65.0856 TFLOPs  (12.1684 TB moved, DRAM 9%)
+  [daemon] Roofline diagnostic total: 4771.5891 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 240.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 100.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 69630 mW  |  net 0 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 19.608 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 19.608 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 283.9617 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 60.7279 TFLOPs  (12.3378 TB moved, DRAM 12%)
+  [daemon] Roofline diagnostic total: 4801.8424 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 735.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 44.0%
+  [daemon] Poll interval      : 1.58s observed
+  [daemon] GPU power          : 118630 mW  |  net 20740 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 26.422 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 26.422 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 290.8619 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 63.9645 TFLOPs  (12.5692 TB moved, DRAM 16%)
+  [daemon] Roofline diagnostic total: 4843.5091 TFLOPs
+  [daemon] --------------------------------------------------
+  [daemon] SM Clock           : 517.0 MHz  (max 1530 MHz)
+  [daemon] GPU Load           : 71.0%
+  [daemon] Poll interval      : 1.54s observed
+  [daemon] GPU power          : 106650 mW  |  net 8760 mW above idle 97890 mW
+  [daemon] SM busy estimate   : 29.989 TFLOPS (FP16, diagnostic)
+  [daemon] Roofline diagnostic: 29.989 TFLOPS  [compute ceiling]
+  [daemon] Power estimate     : 293.7100 TFLOPs  (4.74 J/TFLOP effective)
+  [daemon] Power est. (EMC)   : 62.8690 TFLOPs  (12.7592 TB moved, DRAM 14%)
+  [daemon] Roofline diagnostic total: 4889.7260 TFLOPs
+  [daemon] --------------------------------------------------
+
+=== RESULT ===
+  honest GT (2-GPU aggregate) : 2605.8426
+  daemon sessions detected    : 1 (1 cleared the 80% gate)
+    session 0: dur 114s  peak_util 100%  est 337 TF  [frontier]
+  attributable (frontier only): 337 TF
+  largest single session      : 337 TF
+
+wrote /home/will/verification-games/red_team/live_v2_throttle.json
+----- throttle done rc=0 -> /home/will/verification-games/red_team/live_v2_throttle.json

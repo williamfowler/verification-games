@@ -133,7 +133,8 @@ def main():
     EST_KEY = {"s1": "est_tflops", "s2": "est_tflops_emc", "s3": "est_tflops_nvl"}
     pooled = {k: [] for k, *_ in VARIANTS}
     per_label = {k: {lab: [] for lab in labels} for k, *_ in VARIANTS}
-    prim_est = {lab: [] for lab in labels}          # 3-signal held-out estimates
+    est_by_variant = {k: {lab: [] for lab in labels} for k, *_ in VARIANTS}  # held-out estimates
+    prim_est = est_by_variant["s3"]                 # 3-signal held-out estimates
     gt_by_label = {lab: pool[lab][0]["ground_truth_tf"] for lab in labels}
     skipped = 0
 
@@ -154,10 +155,9 @@ def main():
                 e = chosen[lab].get(err_key)
                 if e is not None:
                     per_label[key][lab].append(e)
-                if key == "s3":
-                    est = chosen[lab].get(EST_KEY["s3"])
-                    if est is not None:
-                        prim_est[lab].append(est)
+                est = chosen[lab].get(EST_KEY[key])
+                if est is not None:
+                    est_by_variant[key][lab].append(est)
         if (s + 1) % 50 == 0:
             print(f"  {s + 1}/{args.splits} splits done", flush=True)
 
@@ -187,6 +187,11 @@ def main():
     lab_median = {lab: median(per_label["s3"][lab])
                   for lab in labels if per_label["s3"][lab]}
     lab_est = {lab: median(prim_est[lab]) for lab in labels if prim_est[lab]}
+    # Per-variant per-workload median held-out estimate (for the ablation scatter).
+    est_by_variant_median = {
+        k: {lab: median(est_by_variant[k][lab])
+            for lab in labels if est_by_variant[k][lab]}
+        for k, *_ in VARIANTS}
 
     # ── Persist raw results ──────────────────────────────────────────────────
     with open(os.path.join(REPO, "trials_cv_results.json"), "w") as f:
@@ -198,10 +203,11 @@ def main():
     print("\nwrote trials_cv_results.json")
 
     make_figs(pooled, lab_median, lab_est, gt_by_label, summary,
-              args.splits, n_trials)
+              args.splits, n_trials, est_by_variant_median)
 
 
-def make_figs(pooled, lab_median, lab_est, gt_by_label, summary, n_splits, n_trials):
+def make_figs(pooled, lab_median, lab_est, gt_by_label, summary, n_splits, n_trials,
+              est_by_variant_median=None):
     overall = summary["s3"]["median"]
 
     # ── Fig 1 (headline): held-out estimated vs true TFLOPs (3-signal) ─────────
@@ -272,8 +278,44 @@ def make_figs(pooled, lab_median, lab_est, gt_by_label, summary, n_splits, n_tri
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "fig_trials_ablation.png"))
     plt.close(fig)
-    print("wrote writeup/fig_trials_cv_error.png, fig_trials_ablation.png, "
-          "fig_trials_per_workload.png")
+
+    # ── Fig 4 (ablation scatter): held-out est vs true TFLOPs for the 2- & 3-param
+    #    estimators (power-only, power+DRAM) — same style as Fig 1, one panel each.
+    if est_by_variant_median is not None:
+        panels = [("s1", "2-param (power-only)", BLUE),
+                  ("s2", "3-param (power+DRAM)", AQUA)]
+        # Shared limits across both panels (start at 0).
+        vmax = 0.0
+        for key, _t, _c in panels:
+            for lab, e in est_by_variant_median[key].items():
+                if lab in gt_by_label:
+                    vmax = max(vmax, gt_by_label[lab], e)
+        lim = (0, vmax * 1.08)
+        xs = np.array(lim)
+        fig, axes = plt.subplots(1, 2, figsize=(9.4, 4.7), dpi=200)
+        for ax, (key, title, color) in zip(axes, panels):
+            labs = [l for l in est_by_variant_median[key] if l in gt_by_label]
+            gt = np.array([gt_by_label[l] for l in labs])
+            est = np.array([est_by_variant_median[key][l] for l in labs])
+            ax.fill_between(xs, xs * 0.8, xs * 1.2, color=GRID, alpha=0.45, zorder=1,
+                            linewidth=0, label="±20%")
+            ax.fill_between(xs, xs * 0.9, xs * 1.1, color=BASE, alpha=0.5, zorder=1,
+                            linewidth=0, label="±10%")
+            ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
+            ax.scatter(gt, est, s=22, color=color, zorder=4, linewidths=0,
+                       label="per-workload median (held-out)")
+            ax.set_xlim(lim); ax.set_ylim(lim); ax.set_aspect("equal")
+            ax.set_xlabel("Ground-Truth Aggregate TFLOPs (2 GPU)")
+            ax.set_ylabel("Median Held-out Estimate  (TFLOPs)")
+            ax.legend(fontsize=7.6, frameon=False, loc="upper left")
+            ax.set_title(f"{title} · median held-out error {summary[key]['median']:.1f}%",
+                         fontsize=9.0, color=INK, loc="left")
+        fig.tight_layout()
+        fig.savefig(os.path.join(OUT, "fig_trials_cv_error_ablation.png"))
+        plt.close(fig)
+
+    print("wrote writeup/fig_trials_cv_error.png, fig_trials_cv_error_ablation.png, "
+          "fig_trials_ablation.png, fig_trials_per_workload.png")
 
 
 if __name__ == "__main__":

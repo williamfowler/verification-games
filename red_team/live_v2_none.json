@@ -1,0 +1,32 @@
+{
+ "label": "live_v2_none",
+ "strategy": "none",
+ "group": "B",
+ "returncode": 0,
+ "ground_truth_tf": 2605.8426,
+ "n_sessions": 1,
+ "n_frontier_sessions": 1,
+ "attributable_frontier_tf": 416.65941163903153,
+ "attributable_all_tf": 416.65941163903153,
+ "max_session_tf": 416.65941163903153,
+ "sessions": [
+  {
+   "start_time": "2026-08-16T21:44:27",
+   "end_time": "2026-08-16T21:45:30",
+   "duration_sec": 62.705275563988835,
+   "power_est_tflops": 416.65941163903153,
+   "power_est_tflops_emc": 188.11874196664985,
+   "peak_gpu_util": 100.0,
+   "poll_count": 38,
+   "net_energy_j": 1974.9656111690097
+  }
+ ],
+ "config": {
+  "strategy": "none",
+  "chunk_steps": 100,
+  "gap_seconds": 6.0,
+  "target_util": 70.0,
+  "steps": 160,
+  "d_model": 1024
+ }
+}

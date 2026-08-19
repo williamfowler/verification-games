@@ -1,0 +1,23 @@
+Frontier pool: 88 workloads × 10 traces (880 records)
+CV: 5 repeats × 5-fold (workload-held-out), MLP epochs 400
+
+  repeat 1/5 done
+  repeat 2/5 done
+  repeat 3/5 done
+  repeat 4/5 done
+  repeat 5/5 done
+
+==================================================================
+MEDIAN HELD-OUT ERROR  (abs %, identical folds, per-workload median)
+==================================================================
+  estimator          median    mean     p90      n
+  2-param            13.09%  15.31%  33.46%    440
+  3-param            14.92%  16.87%  31.88%    440
+  4-param            14.92%  16.87%  31.88%    440
+  pure-MLP           10.36%  12.50%  25.01%    440
+  residual-MLP       10.39%  12.58%  26.17%    440
+  pure-MLP vs 2-param: -2.73 pp (better)
+  residual-MLP vs 2-param: -2.71 pp (better)
+
+wrote nn_estimator_results.json
+wrote writeup/fig_nn_est_vs_truth.png, writeup/fig_nn_compare.png

@@ -1,0 +1,62 @@
+{
+ "label": "live_v2_split",
+ "strategy": "split",
+ "group": "B",
+ "returncode": 0,
+ "ground_truth_tf": 2605.8426,
+ "n_sessions": 4,
+ "n_frontier_sessions": 4,
+ "attributable_frontier_tf": 305.87366897376097,
+ "attributable_all_tf": 305.87366897376097,
+ "max_session_tf": 119.29519238898072,
+ "sessions": [
+  {
+   "start_time": "2026-08-16T21:45:47",
+   "end_time": "2026-08-16T21:46:05",
+   "duration_sec": 18.860831307945773,
+   "power_est_tflops": 119.29519238898072,
+   "power_est_tflops_emc": 77.85686950627927,
+   "peak_gpu_util": 100.0,
+   "poll_count": 10,
+   "net_energy_j": 565.4592119237686
+  },
+  {
+   "start_time": "2026-08-16T21:46:10",
+   "end_time": "2026-08-16T21:46:29",
+   "duration_sec": 18.886171564925462,
+   "power_est_tflops": 60.202848739137096,
+   "power_est_tflops_emc": 3.109320495283928,
+   "peak_gpu_util": 100.0,
+   "poll_count": 10,
+   "net_energy_j": 285.36150302350984
+  },
+  {
+   "start_time": "2026-08-16T21:46:34",
+   "end_time": "2026-08-16T21:46:54",
+   "duration_sec": 20.540945092914626,
+   "power_est_tflops": 64.13939719508896,
+   "power_est_tflops_emc": 6.931439643148667,
+   "peak_gpu_util": 100.0,
+   "poll_count": 11,
+   "net_energy_j": 304.02074270472167
+  },
+  {
+   "start_time": "2026-08-16T21:46:59",
+   "end_time": "2026-08-16T21:47:22",
+   "duration_sec": 23.555941865080968,
+   "power_est_tflops": 62.23623065055418,
+   "power_est_tflops_emc": 2.531116929130701,
+   "peak_gpu_util": 100.0,
+   "poll_count": 13,
+   "net_energy_j": 294.9997332836268
+  }
+ ],
+ "config": {
+  "strategy": "split",
+  "chunk_steps": 40,
+  "gap_seconds": 6.0,
+  "target_util": 70.0,
+  "steps": 160,
+  "d_model": 1024
+ }
+}
