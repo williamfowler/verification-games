@@ -55,62 +55,66 @@ def load(path):
     return json.load(open(os.path.join(REPO_ROOT, path)))
 
 
-# ── Fig 1: S5 power-cap (DVFS) sweep ────────────────────────────────────────
+# ── Fig 1: S5 power-cap (DVFS) — v1 short run vs v2 realistic run ────────────
 def fig_powercap(cal):
-    d = load("red_team/red_s5_records.json")
-    recs = sorted(d["records"], key=lambda r: r["config"]["power_cap_w"])
-    caps = [r["config"]["power_cap_w"] for r in recs]
-    jpf = [r["net_energy_j"] / r["ground_truth_tf"] for r in recs]
-    err = [signed_pct(est4(r, cal), r["ground_truth_tf"]) for r in recs]
-    eff = [efficiency_ratio(r["ground_truth_tf"], r["duration_s"], cal["r_benign"])
-           for r in recs]
+    """Overlay the original short-run sweep (v1, GT ~977) and the realistic-length
+    re-run (v2, GT ~2606). v1 showed a sub-stock energy 'sweet spot'; v2 shows that
+    at realistic run length capping only RAISES J/FLOP — the sweet spot was a
+    short-run artifact, so DVFS is not a working under-report lever at scale."""
     b4 = cal["band4"]
-    sweet = int(np.argmin(jpf))               # energy-optimal operating point
-    stock = caps.index(300) if 300 in caps else int(np.argmax(caps))
 
-    fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.3), dpi=200)
+    def series(path):
+        d = load(path)
+        recs = sorted(d["records"], key=lambda r: r["config"]["power_cap_w"])
+        caps = [r["config"]["power_cap_w"] for r in recs]
+        jpf = [r["net_energy_j"] / r["ground_truth_tf"] for r in recs]
+        err = [signed_pct(est4(r, cal), r["ground_truth_tf"]) for r in recs]
+        gt = recs[0]["ground_truth_tf"]
+        return caps, jpf, err, gt
 
-    # left: energy per TFLOP vs cap — the non-monotone V with a sweet spot
-    axL.plot(caps, jpf, "-o", color=AQUA, lw=2.0, ms=6, zorder=4)
-    axL.scatter([caps[sweet]], [jpf[sweet]], s=150, facecolor="none",
-                edgecolor=RED, lw=1.8, zorder=5)
-    axL.annotate(f"energy-optimal\n~{caps[sweet]} W  ({jpf[sweet]:.2f} J/TFLOP)",
-                 xy=(caps[sweet], jpf[sweet]), xytext=(caps[sweet] + 25, jpf[sweet] + 0.18),
-                 fontsize=7.2, color=RED, va="bottom",
-                 arrowprops=dict(arrowstyle="->", color=RED, lw=0.9))
-    axL.axhline(jpf[stock], color=INK2, lw=0.9, ls=(0, (2, 3)), zorder=2)
-    axL.annotate(f"stock 300 W = {jpf[stock]:.2f} J/TFLOP", xy=(200, jpf[stock]),
-                 fontsize=6.6, color=INK2, va="bottom", ha="center")
+    v1 = series("red_team/red_s5_records.json")
+    v2 = series("red_team/red_s5_v2_records.json")
+
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 4.4), dpi=200)
+    lab1 = f"v1 · short run (GT {v1[3]:.0f} TF)"
+    lab2 = f"v2 · realistic run (GT {v2[3]:.0f} TF)"
+
+    # left: energy per TFLOP vs cap
+    axL.plot(v1[0], v1[1], "--o", color=BASE, lw=1.8, ms=6, zorder=3, label=lab1)
+    axL.plot(v2[0], v2[1], "-o", color=AQUA, lw=2.3, ms=7, zorder=4, label=lab2)
+    # mark each series' energy-optimal (min J/TFLOP) point
+    s1 = int(np.argmin(v1[1])); s2 = int(np.argmin(v2[1]))
+    axL.annotate(f"v1 sweet spot\n{v1[0][s1]} W", xy=(v1[0][s1], v1[1][s1]),
+                 xytext=(v1[0][s1] - 8, v1[1][s1] - 0.28), fontsize=7, color=MUTED,
+                 ha="center", va="top", arrowprops=dict(arrowstyle="->", color=MUTED, lw=0.8))
+    axL.annotate(f"v2 cheapest at STOCK\n(capping only raises J/FLOP)",
+                 xy=(v2[0][s2], v2[1][s2]), xytext=(v2[0][s2] - 20, v2[1][s2] - 0.05),
+                 fontsize=7, color=AQUA, ha="left", va="top",
+                 arrowprops=dict(arrowstyle="->", color=AQUA, lw=0.9))
     axL.set_xlabel("power cap  (nvidia-smi -pl, W)")
     axL.set_ylabel("energy per TFLOP  (J/TFLOP)   ↓ = cheaper per real FLOP")
-    axL.set_title("S5 power-cap: a sub-stock energy sweet spot", fontsize=9.2,
-                  color=INK, loc="left")
-    axL.invert_xaxis()   # capping harder → rightward, matching "more throttled"
+    axL.set_title("The 'sweet spot' doesn't survive a realistic run length",
+                  fontsize=9.0, color=INK, loc="left")
+    axL.legend(fontsize=7.2, frameon=False, loc="upper center")
+    axL.invert_xaxis()   # capping harder → rightward
 
-    # right: 4-param signed error vs cap, benign band shaded
-    axR.axhspan(b4["lo"], b4["hi"], color=GRID, alpha=0.45, zorder=1,
-                label="benign band (4p)")
+    # right: 4-param signed error vs cap
+    axR.axhspan(b4["lo"], b4["hi"], color=GRID, alpha=0.45, zorder=1, label="benign band (4p)")
     axR.axhline(0, color=MUTED, lw=0.8, zorder=2)
-    axR.plot(caps, err, "-o", color=AMBER, lw=2.0, ms=6, zorder=4,
-             label="4-param signed error")
-    axR.axhline(err[stock], color=INK2, lw=0.9, ls=(0, (2, 3)), zorder=2)
-    axR.annotate(f"stock baseline {err[stock]:+.0f}%", xy=(caps[-1], err[stock]),
-                 fontsize=6.6, color=INK2, va="bottom", ha="right")
-    axR.scatter([caps[sweet]], [err[sweet]], s=150, facecolor="none",
-                edgecolor=RED, lw=1.8, zorder=5)
-    axR.annotate(f"{err[sweet]:+.0f}%  (~{err[sweet]-err[stock]:+.0f} pp vs stock)",
-                 xy=(caps[sweet], err[sweet]), xytext=(caps[sweet] + 25, err[sweet] - 4),
-                 fontsize=7.2, color=RED, va="top",
-                 arrowprops=dict(arrowstyle="->", color=RED, lw=0.9))
+    axR.plot(v1[0], v1[2], "--o", color=BASE, lw=1.8, ms=6, zorder=3, label=lab1)
+    axR.plot(v2[0], v2[2], "-o", color=AMBER, lw=2.3, ms=7, zorder=4, label=lab2)
+    axR.annotate("v2: capping moves the\nestimate TOWARD truth",
+                 xy=(v2[0][-2], v2[2][-2]), xytext=(200, -6), fontsize=7, color=AMBER,
+                 ha="center", va="bottom", arrowprops=dict(arrowstyle="->", color=AMBER, lw=0.9))
     axR.set_xlabel("power cap  (nvidia-smi -pl, W)")
     axR.set_ylabel("4-param signed error vs GT (%)   ↓ = under-report")
-    axR.set_title("…and the estimate reads further under (all eff ≤0.7×, legal)",
-                  fontsize=9.2, color=INK, loc="left")
-    axR.legend(fontsize=7.2, frameon=False, loc="lower right")
+    axR.set_title("v1's extra under-report reverses at realistic scale",
+                  fontsize=9.0, color=INK, loc="left")
+    axR.legend(fontsize=7.2, frameon=False, loc="lower center")
     axR.invert_xaxis()
 
-    fig.suptitle("S5 DVFS power-capping (root): bounded, non-monotone under-report — "
-                 "reliable quantity is the delta across caps, not the absolute",
+    fig.suptitle("S5 DVFS power-capping is NOT a working under-report lever at realistic scale: "
+                 "the v1 short-run 'sweet spot' is an artifact",
                  fontsize=8.4, color=MUTED, y=1.0)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "fig_redteam_powercap.png"))
@@ -357,12 +361,92 @@ def fig_vs_benign(cal):
     print("wrote writeup/fig_redteam_vs_benign.png")
 
 
+# ── Fig 5: efficiency (cost) vs estimator error, per strategy ───────────────
+def fig_eff_vs_error(cal):
+    """Cost-vs-effect scatter for the point-estimate strategies (S3/S4/S5). x =
+    efficiency ratio R_benign/R_adv (GPU-hours per real FLOP vs benign; LOWER = more
+    efficient/cheaper; ≤2 = budget-legal). y = 3-param signed error (down = under-
+    report). A real threat sits lower-left: cheap AND under-reporting past the benign
+    band. (S1/S2 are attribution attacks — session count, not a point-estimate error —
+    so they live in fig_redteam_sessions, not here.)"""
+    R = cal["r_benign"]; b4 = cal["band4"]
+
+    def agg(recs, key):
+        by = {}
+        for r in recs:
+            v = r["config"].get(key); gt = r["ground_truth_tf"]
+            e = signed_pct(est4(r, cal), gt)
+            f = efficiency_ratio(gt, r["duration_s"], R)
+            if e is None or f is None:
+                continue
+            by.setdefault(v, {"e": [], "f": []})
+            by[v]["e"].append(e); by[v]["f"].append(f)
+        return [(k, float(np.median(x["f"])), float(np.median(x["e"])))
+                for k, x in sorted(by.items())]
+
+    trials = sorted(glob.glob(os.path.join(REPO_ROOT, "red_team/red_v3_trial*_records.json")))
+    def pull(strat, drop_sgd=False):
+        return [r for p in trials for r in json.load(open(p))["records"]
+                if r["config"].get("strategy") == strat
+                and not (drop_sgd and r["config"].get("optimizer") == "sgd")]
+    s4 = agg(pull("S4_batch"), "batch_size")
+    s3 = agg(pull("S3_atypical", drop_sgd=True), "nhead")
+    s5 = agg(load("red_team/red_s5_v2_records.json")["records"], "power_cap_w")
+
+    fig, ax = plt.subplots(figsize=(7.4, 5.2), dpi=200)
+    # benign scatter band (y) and the evasion floor
+    ax.axhspan(b4["lo"], b4["hi"], color=GRID, alpha=0.5, zorder=1, label="benign band (3-param)")
+    ax.axhline(0, color=MUTED, lw=0.8, zorder=2)
+    xmax = 2.15
+    # threat quadrant: budget-legal (x≤2) AND under-reporting past the band (y<lo)
+    ax.axhspan(-60, b4["lo"], xmin=0, xmax=(2.0) / xmax, color=RED, alpha=0.06, zorder=0)
+    ax.axvline(2.0, color=RED, lw=1.3, ls=(0, (4, 3)), zorder=3, label="2× budget (legal ≤ 2)")
+    ax.axvline(1.0, color=MUTED, lw=0.9, ls=(0, (1, 3)), zorder=2)
+    ax.annotate("benign parity", xy=(1.0, b4["hi"]), fontsize=6.6, color=MUTED,
+                rotation=90, va="top", ha="right")
+
+    series = [("S4 batch-inflation", s4, AMBER, "D", "batch"),
+              ("S3 atypical nhead", s3, BLUE, "s", "h"),
+              ("S5 power-cap (v2)", s5, AQUA, "^", "W")]
+    for name, pts, col, mk, unit in series:
+        xs = [p[1] for p in pts]; ys = [p[2] for p in pts]
+        ax.plot(xs, ys, "-", color=col, lw=1.0, alpha=0.45, zorder=3)  # sweep trajectory
+        ax.scatter(xs, ys, s=70, color=col, marker=mk, edgecolor=INK, linewidths=0.7,
+                   zorder=5, label=name)
+    # label the two configs that clear the evasion floor + the false-positive over-reporter
+    def tag(pts, k, txt, dx, dy, col, ha="left"):
+        p = next((q for q in pts if q[0] == k), None)
+        if p:
+            ax.annotate(txt, xy=(p[1], p[2]), xytext=(p[1] + dx, p[2] + dy),
+                        fontsize=6.8, color=col, ha=ha, va="center",
+                        arrowprops=dict(arrowstyle="->", color=col, lw=0.7))
+    tag(s4, 128, "batch 128", 0.05, -3, AMBER)
+    tag(s5, 300, "stock 300 W", 0.06, 0, AQUA)
+    tag(s3, 64, "tiny head_dim\n(over-reports)", -0.04, 4, BLUE, ha="right")
+
+    ax.set_xlim(0.35, xmax); ax.set_ylim(-40, b4["hi"] + 3)
+    ax.set_xlabel("Efficiency ratio  R_benign / R_adv   (GPU-hours per real FLOP vs benign)\n"
+                  "← lower = more efficient / cheaper          higher = wastes GPU-hours →")
+    ax.set_ylabel("3-param signed error vs GT (%)    ↓ = under-report")
+    ax.annotate("THREAT ZONE\ncheap AND under-reporting", xy=(0.55, -32), fontsize=7.4,
+                color=RED, weight="bold", va="center", ha="left")
+    ax.set_title("Red-team cost vs. effect: every strategy is budget-legal (all ≤2×);\n"
+                 "only S5-stock and S4-batch-128 clear the benign band into evasion",
+                 fontsize=8.8, color=INK, loc="left")
+    ax.legend(fontsize=7.0, frameon=False, loc="upper right")
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "fig_redteam_eff_vs_error.png"))
+    plt.close(fig)
+    print("wrote writeup/fig_redteam_eff_vs_error.png")
+
+
 def main():
     cal = phase1_calibration(_default_phase1_paths())
     fig_powercap(cal)
     fig_sessions()
     fig_gates(cal)
     fig_vs_benign(cal)
+    fig_eff_vs_error(cal)
 
 
 if __name__ == "__main__":

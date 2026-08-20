@@ -1,0 +1,533 @@
+<!-- content only; wrapped in <!doctype><head><body> at publish -->
+<title>Watts to FLOPs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#f5f7fa; --surface:#ffffff; --surface-2:#eef1f6;
+  --ink:#151a22; --strong:#0a0d12; --muted:#5c6676; --faint:#8b95a4;
+  --line:#dbe1ea; --line-2:#c7cfdb;
+  --accent:#1f6feb; --accent-soft:#e5eefc; --amber:#d98200;
+  --blue:#2a78d6; --teal:#0f9f76; --gold:#d98200; --red:#d1465f; --purple:#7d5be0;
+  --good:#0f9f76; --crit:#d1465f;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 8px 28px rgba(16,24,40,.06);
+  --band:#f0f2f6;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --ground:#0c1016; --surface:#141a22; --surface-2:#1a212b;
+  --ink:#e7ebf1; --strong:#f5f7fa; --muted:#98a3b3; --faint:#6b7688;
+  --line:#232c38; --line-2:#33404f;
+  --accent:#4f9bff; --accent-soft:#16233a; --amber:#f0a63a;
+  --blue:#5aa0ef; --teal:#2fc298; --gold:#f0a63a; --red:#f0687f; --purple:#a98cf5;
+  --good:#2fc298; --crit:#f0687f;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.5);
+  --band:#111721;
+}}
+:root[data-theme="dark"]{
+  --ground:#0c1016; --surface:#141a22; --surface-2:#1a212b;
+  --ink:#e7ebf1; --strong:#f5f7fa; --muted:#98a3b3; --faint:#6b7688;
+  --line:#232c38; --line-2:#33404f;
+  --accent:#4f9bff; --accent-soft:#16233a; --amber:#f0a63a;
+  --blue:#5aa0ef; --teal:#2fc298; --gold:#f0a63a; --red:#f0687f; --purple:#a98cf5;
+  --good:#2fc298; --crit:#f0687f;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.5);
+  --band:#111721;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  font-size:17px; line-height:1.62; -webkit-font-smoothing:antialiased;
+  font-feature-settings:"ss01";
+}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.col{max-width:660px;margin-inline:auto}
+h1,h2,h3{font-family:"Instrument Serif",Georgia,serif;font-weight:400;color:var(--strong);
+  text-wrap:balance;letter-spacing:.2px}
+p{margin:0 0 1.1em}
+a{color:var(--accent)}
+strong{font-weight:600;color:var(--strong)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:500;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+.lede{font-size:20px;line-height:1.55;color:var(--muted)}
+
+/* ── hero ── */
+.hero{padding:76px 0 40px;position:relative;overflow:hidden}
+.hero .col{position:relative;z-index:2}
+.kicker{font-family:"IBM Plex Mono",monospace;font-size:12.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--faint);margin:0 0 18px}
+.hero h1{font-size:clamp(46px,7vw,82px);line-height:.98;margin:0 0 22px}
+.hero h1 em{font-style:italic;color:var(--accent)}
+.hero .lede{max-width:600px}
+.reveal{opacity:0;transform:translateY(12px);animation:rise .8s cubic-bezier(.2,.7,.2,1) forwards}
+.d1{animation-delay:.05s}.d2{animation-delay:.16s}.d3{animation-delay:.27s}.d4{animation-delay:.38s}
+@keyframes rise{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.reveal{animation:none;opacity:1;transform:none}}
+
+/* equation plate */
+.plate{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  box-shadow:var(--shadow);padding:30px 28px;margin:30px auto 0}
+.eq{font-family:"IBM Plex Mono",monospace;font-size:clamp(18px,3.2vw,27px);
+  font-weight:500;line-height:1.5;text-align:center;color:var(--strong);
+  letter-spacing:-.5px;overflow-x:auto}
+.eq .t-energy{color:var(--blue)}.eq .t-mem{color:var(--teal)}
+.eq .t-nvl{color:var(--purple)}.eq .t-oh{color:var(--gold)}.eq .t-flop{color:var(--accent)}
+.eq .op{color:var(--faint)}
+.eq-note{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);
+  text-align:center;margin-top:16px;letter-spacing:.02em}
+
+/* ── section rhythm ── */
+section{padding:46px 0}
+.section-head{margin-bottom:28px}
+.section-head h2{font-size:clamp(30px,4.6vw,44px);line-height:1.04;margin:0 0 6px}
+.band{background:var(--band);border-block:1px solid var(--line)}
+
+/* legend chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px 18px;margin:6px 0 4px;
+  font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:8px}
+.dot{width:11px;height:11px;border-radius:3px;flex:none}
+.dot.blue{background:var(--blue)}.dot.teal{background:var(--teal)}
+.dot.purple{background:var(--purple)}.dot.gold{background:var(--gold)}
+.dot.accent{background:var(--accent)}.dot.red{background:var(--red)}
+
+/* term breakdown cards */
+.terms{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:26px}
+.term{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:18px 18px 16px}
+.term .tag{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  letter-spacing:.04em;padding:3px 9px;border-radius:6px;display:inline-block;margin-bottom:11px}
+.term.energy .tag{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)}
+.term.mem .tag{background:color-mix(in srgb,var(--teal) 16%,transparent);color:var(--teal)}
+.term.nvl .tag{background:color-mix(in srgb,var(--purple) 16%,transparent);color:var(--purple)}
+.term.oh .tag{background:color-mix(in srgb,var(--gold) 18%,transparent);color:var(--gold)}
+.term h4{margin:0 0 5px;font-size:15.5px;font-weight:600;color:var(--strong);font-family:inherit}
+.term p{margin:0;font-size:14px;line-height:1.5;color:var(--muted)}
+
+/* figure frames */
+figure{margin:30px 0 6px}
+.fig-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  box-shadow:var(--shadow);padding:24px 24px 18px}
+figcaption{font-size:14px;color:var(--muted);margin-top:14px;line-height:1.5}
+figcaption b{color:var(--ink);font-weight:600}
+svg{display:block;width:100%;height:auto;overflow:visible}
+text{font-family:"IBM Plex Mono",monospace}
+.ax{fill:var(--faint)}.axline{stroke:var(--line-2)}.grid{stroke:var(--line)}
+.zero{stroke:var(--muted)}
+.s-blue{stroke:var(--blue)}.s-red{stroke:var(--red)}.s-accent{stroke:var(--accent)}
+.f-blue{fill:var(--blue)}.f-teal{fill:var(--teal)}.f-gold{fill:var(--gold)}
+.f-purple{fill:var(--purple)}.f-accent{fill:var(--accent)}.f-muted{fill:var(--muted)}
+.f-strong{fill:var(--strong)}.f-red{fill:var(--red)}
+
+/* stat row */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:26px 0 4px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:18px}
+.stat .n{font-family:"Instrument Serif",serif;font-size:42px;line-height:1;color:var(--strong)}
+.stat .n small{font-size:20px;color:var(--muted)}
+.stat .l{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.03em;
+  text-transform:uppercase;color:var(--muted);margin-top:8px}
+.stat.win .n{color:var(--good)}.stat.loss .n{color:var(--crit)}
+
+/* flow diagram */
+.flow{display:grid;grid-template-columns:1fr;gap:0}
+
+/* verdict callout */
+.verdict{background:var(--surface);border:1px solid var(--line-2);border-radius:18px;
+  box-shadow:var(--shadow);padding:30px 30px 26px;margin:8px 0}
+.verdict .badge{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--crit);
+  background:color-mix(in srgb,var(--crit) 14%,transparent);
+  padding:5px 11px;border-radius:7px;display:inline-block;margin-bottom:16px}
+.verdict h3{font-size:26px;margin:0 0 10px;line-height:1.15}
+.verdict p{color:var(--muted);margin:0 0 .7em}
+.verdict p:last-child{margin-bottom:0}
+
+/* pull table */
+.tbl{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;
+  font-size:14px;margin:24px 0 6px;font-variant-numeric:tabular-nums}
+.tbl th,.tbl td{text-align:right;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tbl th:first-child,.tbl td:first-child{text-align:left;color:var(--muted)}
+.tbl thead th{color:var(--faint);font-weight:500;font-size:12px;letter-spacing:.05em;
+  text-transform:uppercase;border-bottom:1px solid var(--line-2)}
+.tbl .neg{color:var(--crit)}.tbl .pos{color:var(--good)}
+.tbl tr.hl td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+
+/* footnote */
+.foot{border-top:1px solid var(--line);padding:34px 0 60px;color:var(--faint);font-size:13.5px}
+.foot .col{max-width:660px}
+.foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface-2);
+  padding:2px 6px;border-radius:5px;color:var(--muted);font-size:12.5px}
+.pill-row{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.pill{font-family:"IBM Plex Mono",monospace;font-size:12px;border:1px solid var(--line-2);
+  border-radius:20px;padding:5px 12px;color:var(--muted)}
+
+hr.rule{border:0;border-top:1px solid var(--line);margin:0}
+.note{font-size:14.5px;color:var(--muted);border-left:2px solid var(--line-2);
+  padding:2px 0 2px 16px;margin:22px 0}
+</style>
+
+<!-- ══════════════════════ HERO ══════════════════════ -->
+<header class="hero">
+  <div class="wrap col">
+    <p class="kicker reveal d1">Verification Games · FLOP estimation · dual-V100</p>
+    <h1 class="reveal d2">Reading <em>FLOPs</em><br>off the power rail.</h1>
+    <p class="lede reveal d3">You can't see inside a training job. But the GPU still spends
+      energy for every multiply it does — and that energy leaks out as three signals a watt-meter
+      can read from the outside. Here's how a four-line energy model turns those signals back
+      into a FLOP count, why a neural net makes it sharper, and the catch that shows up when
+      someone tries to hide.</p>
+
+    <div class="plate reveal d4">
+      <div class="eq">
+        <span class="t-flop">TFLOPs</span> <span class="op">=</span>
+        ( <span class="t-energy">E<sub>net</sub></span>
+        <span class="op">−</span> <span class="t-mem">c·DRAM</span>
+        <span class="op">−</span> <span class="t-nvl">d·NVLink</span>
+        <span class="op">−</span> <span class="t-oh">p·t</span> )
+        <span class="op">/</span> <span class="t-flop">a</span>
+      </div>
+      <p class="eq-note">measured energy, minus what the bytes and idle overhead cost,
+        divided by the energy of one TFLOP</p>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════ 1 · THE SIGNALS ══════════════════════ -->
+<section>
+  <div class="wrap col">
+    <p class="eyebrow">01 — The measurement problem</p>
+    <div class="section-head"><h2>Three taps on the outside of the box</h2></div>
+    <p>The estimator never reads the model, the loss, or the code. It watches the hardware
+      through three sensors that any operator already has, and it has one label to learn from
+      during calibration: the honest FLOP count a known workload printed.</p>
+  </div>
+
+  <div class="wrap">
+    <figure><div class="fig-card">
+      <svg viewBox="0 0 960 300" role="img" aria-label="Diagram: GPU box tapped by three sensors feeding an estimator that outputs a FLOP count">
+        <!-- GPU box -->
+        <rect x="40" y="86" width="150" height="128" rx="14" fill="var(--surface-2)" stroke="var(--line-2)"/>
+        <text x="115" y="140" text-anchor="middle" class="f-strong" font-size="16" font-weight="600">2× V100</text>
+        <text x="115" y="162" text-anchor="middle" class="f-muted" font-size="12.5">DDP training</text>
+        <text x="115" y="181" text-anchor="middle" class="f-faint" font-size="11.5" style="fill:var(--faint)">(opaque)</text>
+
+        <!-- three taps -->
+        <g font-size="13" font-weight="500">
+          <!-- power -->
+          <line x1="190" y1="112" x2="330" y2="72" class="s-blue" stroke-width="2"/>
+          <circle cx="330" cy="72" r="6" class="f-blue"/>
+          <rect x="344" y="52" width="196" height="40" rx="9" fill="var(--surface)" stroke="var(--blue)"/>
+          <text x="358" y="70" class="f-blue" font-weight="600">GPU power</text>
+          <text x="358" y="85" class="f-muted" font-size="11.5">nvidia-smi → net energy Eₙₑₜ, time t</text>
+          <!-- dram -->
+          <line x1="190" y1="150" x2="330" y2="150" class="s-accent" stroke-width="2" style="stroke:var(--teal)"/>
+          <circle cx="330" cy="150" r="6" class="f-teal"/>
+          <rect x="344" y="130" width="196" height="40" rx="9" fill="var(--surface)" stroke="var(--teal)"/>
+          <text x="358" y="148" class="f-teal" font-weight="600">DRAM traffic</text>
+          <text x="358" y="163" class="f-muted" font-size="11.5">DCGM counters → TB moved</text>
+          <!-- nvlink -->
+          <line x1="190" y1="188" x2="330" y2="228" class="s-accent" stroke-width="2" style="stroke:var(--purple)"/>
+          <circle cx="330" cy="228" r="6" class="f-purple"/>
+          <rect x="344" y="208" width="196" height="40" rx="9" fill="var(--surface)" stroke="var(--purple)"/>
+          <text x="358" y="226" class="f-purple" font-weight="600">NVLink traffic</text>
+          <text x="358" y="241" class="f-muted" font-size="11.5">DCGM counters → all-reduce TB</text>
+        </g>
+
+        <!-- arrows to estimator -->
+        <g class="grid" stroke-width="1.5" fill="none" stroke-dasharray="3 4">
+          <path d="M540 72 C 610 72, 620 150, 690 150"/>
+          <path d="M540 150 L 690 150"/>
+          <path d="M540 228 C 610 228, 620 150, 690 150"/>
+        </g>
+        <!-- estimator -->
+        <rect x="690" y="112" width="130" height="76" rx="13" fill="var(--accent-soft)" stroke="var(--accent)"/>
+        <text x="755" y="146" text-anchor="middle" class="f-accent" font-size="14.5" font-weight="700">energy</text>
+        <text x="755" y="165" text-anchor="middle" class="f-accent" font-size="14.5" font-weight="700">model</text>
+        <!-- output -->
+        <path d="M820 150 L 872 150" class="s-accent" stroke-width="2" marker-end="url(#ah)"/>
+        <defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0,0 L9,4.5 L0,9 z" fill="var(--accent)"/></marker></defs>
+        <text x="905" y="140" text-anchor="middle" class="f-strong" font-size="15" font-weight="700">FLOPs</text>
+        <text x="905" y="160" text-anchor="middle" class="f-muted" font-size="11.5">estimate</text>
+      </svg>
+    </div>
+    <figcaption><b>The whole pipeline.</b> Three passive telemetry signals in; one number out.
+      Everything downstream is about how faithfully that box inverts energy back into compute.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══════════════════════ 2 · THE ENERGY MODEL ══════════════════════ -->
+<section class="band">
+  <div class="wrap col">
+    <p class="eyebrow">02 — The base estimator</p>
+    <div class="section-head"><h2>An energy ledger, run backwards</h2></div>
+    <p>Every joule the GPUs draw is spent on one of a few things. Write that as a balance —
+      energy in equals energy out, term by term — and you get a straight line through the
+      calibration runs:</p>
+  </div>
+
+  <div class="wrap col">
+    <div class="plate" style="margin-top:22px">
+      <div class="eq" style="font-size:clamp(15px,2.6vw,21px)">
+        <span class="t-energy">E<sub>net</sub></span> <span class="op">=</span>
+        <span class="t-flop">a</span>·FLOPs <span class="op">+</span>
+        <span class="t-mem">c</span>·DRAM <span class="op">+</span>
+        <span class="t-nvl">d</span>·NVLink <span class="op">+</span>
+        <span class="t-oh">p</span>·t
+      </div>
+      <p class="eq-note">fit a, c, d, p on benign runs&nbsp;·&nbsp;then solve for FLOPs on a new one</p>
+    </div>
+
+    <div class="terms">
+      <div class="term energy"><span class="tag">a · FLOPs</span>
+        <h4>Compute energy</h4><p>The prize. Each TFLOP costs a near-constant <b>a ≈ 3.5 J</b>
+        on this hardware — the marginal energy of arithmetic.</p></div>
+      <div class="term mem"><span class="tag">c · DRAM</span>
+        <h4>Memory energy</h4><p>Joules spent moving bytes to and from HBM, subtracted off using
+        the measured terabytes.</p></div>
+      <div class="term nvl"><span class="tag">d · NVLink</span>
+        <h4>Interconnect</h4><p>Energy of the gradient all-reduce between the two GPUs, from the
+        NVLink byte counters.</p></div>
+      <div class="term oh"><span class="tag">p · t</span>
+        <h4>Idle overhead</h4><p>Fixed power the card draws just being resident, times how long
+        the job ran.</p></div>
+    </div>
+
+    <p style="margin-top:30px">Subtract the three non-compute terms from the measured energy,
+      divide by <span class="mono" style="color:var(--accent)">a</span>, and what's left is the
+      FLOP count. That's the whole model — the same four lines the live daemon and the offline
+      evaluator both run.</p>
+
+    <p class="note">A surprise worth stating plainly: the byte terms <em>don't</em> improve
+      accuracy on honest runs. Power alone (a <b>2-parameter</b> model) generalizes slightly
+      better than the 3- or 4-parameter versions that add DRAM and NVLink. Those extra signals
+      earn their place elsewhere — as consistency tripwires against tampering — not in the point
+      estimate.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════ 3 · HOW WELL ══════════════════════ -->
+<section>
+  <div class="wrap col">
+    <p class="eyebrow">03 — Calibrated accuracy</p>
+    <div class="section-head"><h2>About a sixth off, on a workload it never saw</h2></div>
+    <p>The honest test is <em>held-out</em>: calibrate on some workloads, predict a different
+      one, repeat over many splits. Because every workload is run ten times, each split draws a
+      fresh trace — so the number reflects generalization, not memorization.</p>
+    <div class="stats">
+      <div class="stat"><div class="n">13<small>.1%</small></div><div class="l">2-param · power only</div></div>
+      <div class="stat"><div class="n">14<small>.9%</small></div><div class="l">3- & 4-param · +bytes</div></div>
+      <div class="stat"><div class="n">88</div><div class="l">workloads × 10 traces</div></div>
+    </div>
+    <p style="margin-top:24px">Median held-out error, power-only: about <strong>13%</strong>.
+      Good enough to bracket a training run's scale — but the error isn't random. It bends with
+      the workload, and that bend is the opening a neural net can close.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════ 4 · THE MLP ══════════════════════ -->
+<section class="band">
+  <div class="wrap col">
+    <p class="eyebrow">04 — The neural upgrade</p>
+    <div class="section-head"><h2>The cost of a FLOP isn't a constant</h2></div>
+    <p>The base model bets that every TFLOP costs the same <span class="mono">a</span> joules.
+      It doesn't. A big, dense matrix multiply runs the tensor cores hotter and cheaper per FLOP
+      than a small awkward one — so the true joules-per-FLOP drifts with the shape of the work.
+      A single constant can't track that drift. A small network can.</p>
+
+    <p>The design keeps the physics as a backbone and lets the net learn only the correction —
+      a multiplier centered on 1, driven by dimensionless <em>intensity</em> features (power
+      level, energy-per-byte, interconnect-per-byte) that say nothing about size, only about
+      efficiency:</p>
+
+    <div class="plate" style="margin-top:22px">
+      <div class="eq" style="font-size:clamp(15px,2.7vw,23px)">
+        <span class="t-flop">TFLOPs</span> <span class="op">=</span>
+        <span class="t-energy">est<sub>2p</sub></span>
+        <span class="op">×</span>
+        exp(&thinspace;<span class="t-nvl">g</span>(<span style="color:var(--muted)">z</span>)&thinspace;)
+      </div>
+      <p class="eq-note">physics estimate&nbsp;×&nbsp;a learned efficiency correction&nbsp;·&nbsp;
+        g(z)=0 falls back to the base model</p>
+    </div>
+
+    <p style="margin-top:26px">Trained and held out on the very same folds as the linear models,
+      both the physics-anchored net and a plain log-space MLP land in the same place — and it's
+      a real step down:</p>
+  </div>
+
+  <div class="wrap">
+    <figure><div class="fig-card">
+      <svg viewBox="0 0 720 320" role="img" aria-label="Bar chart of median held-out error: 2-param 13.1%, 3-param 14.9%, 4-param 14.9%, pure MLP 10.4%, residual MLP 10.4%">
+        <!-- gridlines -->
+        <g class="grid" stroke-width="1">
+          <line x1="70" y1="270" x2="700" y2="270"/>
+          <line x1="70" y1="195" x2="700" y2="195"/>
+          <line x1="70" y1="120" x2="700" y2="120"/>
+          <line x1="70" y1="45" x2="700" y2="45"/>
+        </g>
+        <g class="ax" font-size="11" text-anchor="end">
+          <text x="60" y="274">0%</text><text x="60" y="199">5</text>
+          <text x="60" y="124">10</text><text x="60" y="49">15</text>
+        </g>
+        <!-- bars: baseline y=270, scale 15px per % -->
+        <!-- 2p 13.1 ->h196.5 -->
+        <g>
+          <rect x="96"  y="73.5" width="86" height="196.5" rx="5" class="f-blue"/>
+          <rect x="210" y="46.5" width="86" height="223.5" rx="5" class="f-teal"/>
+          <rect x="324" y="46.5" width="86" height="223.5" rx="5" class="f-gold"/>
+          <rect x="438" y="114"  width="86" height="156"   rx="5" class="f-purple"/>
+          <rect x="552" y="114"  width="86" height="156"   rx="5" class="f-red"/>
+        </g>
+        <!-- value labels -->
+        <g text-anchor="middle" font-size="14" font-weight="600" class="f-strong">
+          <text x="139" y="63">13.1%</text><text x="253" y="36">14.9%</text>
+          <text x="367" y="36">14.9%</text>
+          <text x="481" y="104" class="f-strong">10.4%</text><text x="595" y="104">10.4%</text>
+        </g>
+        <!-- category labels -->
+        <g text-anchor="middle" font-size="12.5" class="ax">
+          <text x="139" y="290">2-param</text><text x="253" y="290">3-param</text>
+          <text x="367" y="290">4-param</text>
+          <text x="481" y="290" style="fill:var(--purple)">pure MLP</text>
+          <text x="595" y="290" style="fill:var(--red)">resid. MLP</text>
+        </g>
+        <text x="70" y="24" class="ax" font-size="11.5">median held-out error (lower is better)</text>
+      </svg>
+    </div>
+    <figcaption><b>−2.7 points, ~20% relative.</b> The nets cut the median held-out error from
+      13.1% to 10.4% and pull the worst-case tail in from 33% to 25%. Notably the linear
+      byte-terms (3/4-param) <em>hurt</em>; the net uses those same signals nonlinearly and
+      gains.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══════════════════════ 5 · THE CATCH ══════════════════════ -->
+<section>
+  <div class="wrap col">
+    <p class="eyebrow">05 — Red team</p>
+    <div class="section-head"><h2>The sharper tool is the easier one to fool</h2></div>
+    <p>Accuracy on honest runs is only half the job. This estimator also has to hold up when a
+      tenant <em>wants</em> to under-report — to run real FLOPs that read low. So we replayed the
+      adversarial workloads through the neural estimator and watched the signed error.</p>
+    <p>The base model's rigidity turns out to be a defense. It assumes one fixed cost per FLOP,
+      so the most an attacker can bend it is by making real FLOPs genuinely cheaper. The net
+      learned that <em>efficiency varies</em> — and an attacker who pushes the workload into an
+      efficient corner it never saw in training gets that flexibility working <em>for</em> them.
+      Inflate the batch far past the calibration range and the net extrapolates its own
+      correction straight into the under-report:</p>
+  </div>
+
+  <div class="wrap">
+    <figure><div class="fig-card">
+      <div class="chips">
+        <span class="chip"><span class="dot blue"></span>linear · 2-param</span>
+        <span class="chip"><span class="dot red"></span>neural · residual MLP</span>
+        <span class="chip"><span class="dot" style="background:color-mix(in srgb,var(--red) 22%,transparent)"></span>evasion zone (past benign scatter)</span>
+      </div>
+      <svg viewBox="0 0 720 360" role="img" aria-label="Line chart: signed error vs batch size. The neural estimator under-reports further than the linear one, crossing into the evasion zone at batch 64 while the linear one only reaches it at batch 128.">
+        <!-- evasion zone: err < -25% -> y from 213.3 to bottom.  y(v)=105 - v*4.333 -->
+        <rect x="70" y="213.3" width="620" height="86.7" fill="color-mix(in srgb,var(--red) 12%,transparent)"/>
+        <text x="682" y="252" text-anchor="end" font-size="11" class="f-red" style="fill:var(--red)">past benign scatter → evasion</text>
+        <!-- gridlines & y axis (skip 0, drawn as zero line) -->
+        <g class="grid" stroke-width="1">
+          <line x1="70" y1="61.7" x2="690" y2="61.7"/>
+          <line x1="70" y1="148.3" x2="690" y2="148.3"/>
+          <line x1="70" y1="191.7" x2="690" y2="191.7"/>
+          <line x1="70" y1="235" x2="690" y2="235"/>
+          <line x1="70" y1="278.3" x2="690" y2="278.3"/>
+        </g>
+        <line x1="70" y1="105" x2="690" y2="105" class="zero" stroke-width="1.4" stroke-dasharray="2 4"/>
+        <g class="ax" font-size="11" text-anchor="end">
+          <text x="62" y="65">+10%</text><text x="62" y="109">0</text>
+          <text x="62" y="152">−10</text><text x="62" y="195">−20</text>
+          <text x="62" y="239">−30</text><text x="62" y="282">−40</text>
+        </g>
+        <!-- x labels: batch at x 90,240,390,540,650? use 90,235,380,525,660 -->
+        <g class="ax" font-size="12" text-anchor="middle">
+          <text x="90" y="322">b8</text><text x="235" y="322">b16</text>
+          <text x="380" y="322">b32</text><text x="525" y="322">b64</text><text x="660" y="322">b128</text>
+          <text x="380" y="344" class="ax" font-size="11.5">batch size — calibration only reached 32 →</text>
+        </g>
+        <!-- linear 2-param: +0.5,+4.3,-8.6,-18.5,-25.1 -> y=105-v*4.333 -->
+        <!-- y: 102.8,86.4,142.3,185.1,213.8 -->
+        <polyline points="90,102.8 235,86.4 380,142.3 525,185.1 660,213.8"
+          fill="none" class="s-blue" stroke-width="2.6"/>
+        <g class="f-blue">
+          <circle cx="90" cy="102.8" r="4.5"/><circle cx="235" cy="86.4" r="4.5"/>
+          <circle cx="380" cy="142.3" r="4.5"/><circle cx="525" cy="185.1" r="4.5"/>
+          <circle cx="660" cy="213.8" r="4.5"/></g>
+        <!-- neural residMLP: +0.1,+0.3,-15.5,-29.3,-40.6 -> y:104.6,103.7,172.2,231.9,280.9 -->
+        <polyline points="90,104.6 235,103.7 380,172.2 525,231.9 660,280.9"
+          fill="none" class="s-red" stroke-width="2.6"/>
+        <g class="f-red">
+          <circle cx="90" cy="104.6" r="4.5"/><circle cx="235" cy="103.7" r="4.5"/>
+          <circle cx="380" cy="172.2" r="4.5"/><circle cx="525" cy="231.9" r="4.5"/>
+          <circle cx="660" cy="280.9" r="4.5"/></g>
+        <!-- callouts -->
+        <text x="648" y="205" text-anchor="end" font-size="12" font-weight="600" class="f-blue">−25%</text>
+        <text x="648" y="272" text-anchor="end" font-size="12" font-weight="600" class="f-red">−41%</text>
+      </svg>
+    </div>
+    <figcaption><b>Batch-inflation, an attack that keeps the true FLOP count fixed.</b> The linear
+      estimator only slips to the edge of honest scatter at batch 128; the neural estimator is
+      already well past it at batch 64 and reads <b>−41%</b> at 128. Same story on atypical
+      geometry and a stock power-capped long run, where the pure net falls as far as −82%.</figcaption>
+    </figure>
+  </div>
+
+  <div class="wrap col">
+    <table class="tbl">
+      <thead><tr><th>Under-report at the strongest setting</th><th>linear</th><th>neural</th></tr></thead>
+      <tbody>
+        <tr><td>S4 · batch inflation (batch 128)</td><td class="neg">−25%</td><td class="neg">−41%</td></tr>
+        <tr><td>S3 · atypical geometry (head_dim 1024)</td><td class="neg">−15%</td><td class="neg">−34%</td></tr>
+        <tr class="hl"><td>S5 · power-capped long run (stock)</td><td class="neg">−30%</td><td class="neg">−65%</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="border-color:var(--teal)">One consolation, and it's a design lesson:
+      the <em>physics-anchored</em> net is consistently less foolable than the plain one — the
+      energy backbone caps how far the learned correction can run. Keeping the model close to a
+      mechanism you trust buys robustness back.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════ VERDICT ══════════════════════ -->
+<section class="band">
+  <div class="wrap col">
+    <div class="verdict">
+      <span class="badge">The tradeoff</span>
+      <h3>More accurate on the honest. More exposed to the adversary.</h3>
+      <p>The neural estimator is the better <em>meter</em> — ~20% tighter on workloads no one is
+        trying to game. But a FLOP verifier lives in both worlds, and there the flexibility that
+        won accuracy becomes a fresh lever: every place the net learned that a FLOP can be cheap
+        is a place an attacker can make FLOPs read cheap.</p>
+      <p>So the choice isn't "which is more accurate." It's whether the deployment is a
+        cooperative meter or a contested one. Trusted telemetry: take the net. Adversarial
+        attribution: the rigid model's single constant is the safer floor — or anchor the net to
+        the physics and give up a little of its edge to keep the rest honest.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ FOOT ══════════════════════ -->
+<footer class="foot">
+  <div class="wrap col">
+    <p>Estimator: <code>detect_flops.py</code> · neural head: <code>nn_estimator.py</code> ·
+      red-team: <code>red_team/score_redteam_nn.py</code>. Held-out accuracy is repeated
+      workload-out cross-validation (88 fp16-frontier workloads × 10 traces, dual Tesla V100,
+      DDP). Adversarial numbers are the frozen estimators scored on GT-preserving red-team runs;
+      the neural figures are a 5-seed ensemble median.</p>
+    <div class="pill-row">
+      <span class="pill">a ≈ 3.5 J / TFLOP</span>
+      <span class="pill">2-param held-out 13.1%</span>
+      <span class="pill">MLP held-out 10.4%</span>
+      <span class="pill">batch-128 evasion −41%</span>
+    </div>
+  </div>
+</footer>
