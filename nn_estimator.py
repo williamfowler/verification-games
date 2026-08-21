@@ -72,7 +72,7 @@ plt.rcParams.update({
     "grid.color": GRID, "grid.linewidth": 0.6, "axes.axisbelow": True,
     "figure.facecolor": SURFACE, "axes.facecolor": SURFACE,
     "savefig.facecolor": SURFACE, "axes.spines.top": False,
-    "axes.spines.right": False, "font.size": 9,
+    "axes.spines.right": False, "font.size": 13,
 })
 
 EPS = 1e-9
@@ -255,47 +255,47 @@ def _scatter(ax, gt, est_by_lab, name, color, sub):
     ax.fill_between(xs, xs * 0.8, xs * 1.2, color=GRID, alpha=0.45, lw=0, zorder=1, label="±20%")
     ax.fill_between(xs, xs * 0.9, xs * 1.1, color=BASE, alpha=0.5, lw=0, zorder=1, label="±10%")
     ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
-    ax.scatter(x, y, s=22, color=color, zorder=4, linewidths=0,
-               label="per-workload median (held-out)")
+    ax.scatter(x, y, s=34, color=color, zorder=4, linewidths=0,
+               label="one workload (median)")
     ax.set_xlim(lim); ax.set_ylim(lim); ax.set_aspect("equal")
-    ax.set_xlabel("Ground-Truth Aggregate TFLOPs (2 GPU)")
-    ax.set_ylabel("Median Held-out Estimate  (TFLOPs)")
-    ax.set_title(f"{name} · median held-out {sub:.1f}%", fontsize=9.0, color=INK, loc="left")
-    ax.legend(fontsize=7.0, frameon=False, loc="upper left")
+    ax.set_xlabel("Ground-truth TFLOPs")
+    ax.set_ylabel("Estimated TFLOPs")
+    ax.set_title(f"{name} \u00b7 median error {sub:.1f}%", fontsize=14.5, color=INK,
+                 loc="left", pad=10)
+    ax.legend(fontsize=12, frameon=False, loc="upper left")
 
 
 def make_figs(rows, est_by_lab, gt, n_workloads, repeats, folds):
     # scatter: pure-MLP and residual-MLP
-    fig, axes = plt.subplots(1, 2, figsize=(9.6, 4.9), dpi=200)
+    fig, axes = plt.subplots(1, 2, figsize=(11.4, 5.7), dpi=200)
     _scatter(axes[0], gt, est_by_lab["pure-MLP"], "Pure MLP", PURPLE, rows["pure-MLP"]["median"])
-    _scatter(axes[1], gt, est_by_lab["residual-MLP"], "Residual MLP (physics-anchored)",
+    _scatter(axes[1], gt, est_by_lab["residual-MLP"], "Residual MLP",
              AQUA, rows["residual-MLP"]["median"])
-    fig.suptitle(f"Neural FLOP estimator — held-out estimate vs truth "
-                 f"({n_workloads} workloads, {repeats}×{folds}-fold CV)",
-                 fontsize=9.2, color=INK, y=1.0)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "fig_nn_est_vs_truth.png"))
+    fig.savefig(os.path.join(OUT, "figure_5.png"))
     plt.close(fig)
 
     # comparison bar: median held-out error across all estimators
-    fig, ax = plt.subplots(figsize=(6.6, 4.2), dpi=200)
+    fig, ax = plt.subplots(figsize=(7.8, 5.0), dpi=200)
     cols = {"2-param": BLUE, "3-param": AQUA, "4-param": AMBER,
             "pure-MLP": PURPLE, "residual-MLP": RED}
     xs = np.arange(len(ESTIMATORS))
     meds = [rows[e]["median"] for e in ESTIMATORS]
     ax.bar(xs, meds, color=[cols[e] for e in ESTIMATORS], zorder=3, width=0.66)
     for i, m in enumerate(meds):
-        ax.annotate(f"{m:.1f}%", (i, m), textcoords="offset points", xytext=(0, 3),
-                    ha="center", fontsize=8, color=INK)
+        ax.annotate(f"{m:.1f}%", (i, m), textcoords="offset points", xytext=(0, 4),
+                    ha="center", fontsize=13, color=INK, fontweight="bold")
     best = ESTIMATORS[int(np.argmin(meds))]
     ax.axhline(rows["2-param"]["median"], color=INK2, lw=0.8, ls=(0, (3, 3)), zorder=2)
-    ax.set_xticks(xs); ax.set_xticklabels(ESTIMATORS, fontsize=8)
-    ax.set_ylabel("Median held-out error vs ground truth  (%)")
-    ax.set_title(f"Estimator accuracy on identical held-out folds — best: {best}",
-                 fontsize=9.0, color=INK, loc="left")
+    ax.set_xticks(xs); ax.set_xticklabels(ESTIMATORS, fontsize=12.5)
+    ax.set_ylabel("Median held-out error  (%)")
+    ax.set_title("Estimator accuracy, identical held-out folds",
+                 fontsize=14.5, color=INK, loc="left", pad=10)
     ax.grid(axis="x", visible=False)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "fig_nn_compare.png"))
+    fig.savefig(os.path.join(OUT, "figure_6.png"))
     plt.close(fig)
     print("wrote writeup/fig_nn_est_vs_truth.png, writeup/fig_nn_compare.png")
 

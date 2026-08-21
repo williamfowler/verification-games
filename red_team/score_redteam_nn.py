@@ -88,7 +88,7 @@ def main():
     groups = {
         "S4_batch":    (load_red(trials, "S4_batch"),    "batch_size", "batch"),
         "S3_atypical": (load_red(trials, "S3_atypical"), "nhead",      "nhead"),
-        "S5_powercap": (load_red([os.path.join(REPO, "red_team/red_s5_v2_records.json")]),
+        "S5_powercap": (load_red([os.path.join(REPO, "red_team/red_s5_v3_records.json")]),
                         "power_cap_w", "cap_W"),
     }
 

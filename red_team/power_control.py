@@ -95,6 +95,11 @@ def main():
                     help="SM clocks (MHz) to sweep (S6), e.g. 1380 1000 700 500")
     ap.add_argument("--steps", type=int, default=60)
     ap.add_argument("--baseline-seconds", type=int, default=30)
+    ap.add_argument("--warmup", type=int, default=0,
+                    help="thermal warmup runs (discarded) before the sweep, so every cap "
+                         "run is at steady-state temperature like the Phase I calibration. "
+                         "The stock run reads ~30pp low on COLD GPUs (a clock-state artifact); "
+                         "use 2-3 for a clean, thermally-matched sweep.")
     ap.add_argument("--out", default=os.path.join(REPO_ROOT, "red_team", "red_s5_records.json"))
     args = ap.parse_args()
 
@@ -104,6 +109,16 @@ def main():
     baseline_idle = sample_idle(args.baseline_seconds, gpus, "baseline")
     base_mw = median([mw for _, mw in baseline_idle])
     print(f"Idle baseline: {base_mw:.0f} mW")
+
+    # Thermal warmup: the estimator was calibrated on hot, steady-state GPUs; a cold
+    # first run boosts to higher clocks (lower J/FLOP) and reads far under. Warm up so
+    # the sweep is measured in the same thermal regime as the calibration.
+    for w in range(args.warmup):
+        print(f"\n=== thermal warmup {w + 1}/{args.warmup} (discarded) ===", flush=True)
+        wr = run_workload(parent_config(args.steps), base_mw, gpus)
+        if wr.get("returncode") == 0:
+            print(f"  warmup {w + 1}: {wr['duration_s']:.0f}s  J/TF "
+                  f"{wr['net_energy_j'] / wr['ground_truth_tf']:.3f}", flush=True)
 
     records = []
     try:

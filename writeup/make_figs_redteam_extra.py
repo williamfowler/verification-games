@@ -124,9 +124,9 @@ def fig_powercap(cal):
 
 # ── Fig 2: S1 split / S2 throttle live-daemon session timelines ──────────────
 def fig_sessions():
-    src = {"none": "red_team_old/live_none.json",
-           "split": "red_team_old/live_split.json",
-           "throttle": "red_team_old/live_throttle.json"}
+    src = {"none": "red_team/live_v2_none.json",
+           "split": "red_team/live_v2_split.json",
+           "throttle": "red_team/live_v2_throttle.json"}
     runs = {}
     for k, p in src.items():
         d = load(p)
@@ -136,14 +136,14 @@ def fig_sessions():
         return min(np.datetime64(s["start_time"]) for s in run["sessions"])
 
     rows = [
-        ("none (benign)\ncontrol", runs["none"], BLUE,
-         "honest baseline"),
-        ("S1 split\n(idle gaps > stop window)", runs["split"], RED,
-         "attribution EVADED (4 unlinkable jobs)"),
+        ("benign\ncontrol", runs["none"], BLUE,
+         "1 workload detected"),
+        ("S1 split\n(6 s pauses)", runs["split"], RED,
+         "seen as 4 separate jobs"),
         ("S2 throttle\n(micro-sleep)", runs["throttle"], AMBER,
-         "peak-util still 100% → stays flagged; gate NOT evaded"),
+         "still 1 workload"),
     ]
-    fig, ax = plt.subplots(figsize=(9.2, 4.2), dpi=200)
+    fig, ax = plt.subplots(figsize=(11.5, 4.6), dpi=200)
     ylabels = []
     for i, (name, run, col, note) in enumerate(rows):
         base = t0(run)
@@ -152,27 +152,23 @@ def fig_sessions():
             dur = s["duration_sec"]
             ax.barh(i, dur, left=start, height=0.5, color=col, alpha=0.85,
                     edgecolor=INK, lw=0.6, zorder=3)
-            ax.text(start + dur / 2, i, f"{s['peak_gpu_util']:.0f}%\npeak",
-                    ha="center", va="center", fontsize=6.2, color="white", zorder=4)
         ns = run["n_sessions"]
-        ax.annotate(f"{ns} session{'s' if ns != 1 else ''}  —  {note}",
-                    xy=(1.005, i), xycoords=("axes fraction", "data"),
-                    fontsize=7.2, color=col, va="center", ha="left", fontweight="bold")
+        ax.annotate(note,
+                    xy=(1.01, i), xycoords=("axes fraction", "data"),
+                    fontsize=13, color=col, va="center", ha="left", fontweight="bold")
         ylabels.append(name)
     ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels(ylabels, fontsize=8)
+    ax.set_yticklabels(ylabels, fontsize=13)
     ax.set_ylim(-0.6, len(rows) - 0.4)
-    ax.set_xlabel("time since first session start  (s)")
-    ax.set_xlim(-8, None)
-    ax.set_title("S1/S2 live-daemon attribution: one honest run either fragments into "
-                 "unlinkable sessions (S1) or stays fully flagged (S2)",
-                 fontsize=9.0, color=INK, loc="left")
+    ax.set_xlabel("time since workload start  (s)", fontsize=13)
+    ax.tick_params(axis="x", labelsize=12)
+    ax.set_xlim(-4, None)
     ax.grid(axis="y", visible=False)
-    fig.subplots_adjust(right=0.72)
-    fig.tight_layout()
-    fig.savefig(os.path.join(OUT, "fig_redteam_sessions.png"))
+    fig.tight_layout(rect=(0, 0, 0.8, 1))
+    fig.savefig(os.path.join(OUT, "fig_redteam_sessions.png"), bbox_inches="tight")
+    fig.savefig(os.path.join(OUT, "figure_8.png"), bbox_inches="tight")
     plt.close(fig)
-    print("wrote writeup/fig_redteam_sessions.png")
+    print("wrote writeup/fig_redteam_sessions.png + figure_8.png")
 
 
 # ── Fig 3: the arith_intensity consistency-gate shield ──────────────────────

@@ -20,7 +20,7 @@ GREEN_FILL, BLUE_FILL, NEUTRAL_FILL = "#e8f5ef", "#e7f0fb", "#f1f0ea"
 plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"]})
 
 
-def box(ax, cx, cy, w, h, text, fill, edge, fs=8.6, weight="normal", tcol=INK):
+def box(ax, cx, cy, w, h, text, fill, edge, fs=12.5, weight="normal", tcol=INK):
     x, y = cx - w / 2, cy - h / 2
     ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.5,rounding_size=2.2",
                                 linewidth=1.4, edgecolor=edge, facecolor=fill, zorder=3))
@@ -58,40 +58,41 @@ def main():
                          (55, "DEPLOYMENT  ·  per workload", BLUE)]:
         ax.add_patch(FancyBboxPatch((x0, 4), 30, 88, boxstyle="round,pad=0.6,rounding_size=2.4",
                                     linewidth=1.6, edgecolor=INK, facecolor="none", zorder=1))
-        ax.text(x0 + 15, 88, lbl, ha="center", va="center", fontsize=10.5,
+        ax.text(x0 + 15, 88, lbl, ha="center", va="center", fontsize=14.5,
                 weight="bold", color=col)
 
     w, h = 26, 15
     column(ax, 17, w, h, [
         "Measure idle\npower baseline",
-        "Calibrate memory-traffic\nscale from a known\ndata volume",
-        "Run 91-config sweep;\nkeep the 88 that clear\nthe 80% frontier gate",
-        "Fit energy constants\nto minimize error\nvs ground truth",
+        "Run 91-config sweep;\nkeep 88 above the\n80% frontier gate",
+        "Record energy, DRAM\n& NVLink bytes\nper workload",
+        "Fit energy constants\nvs ground truth",
     ], GREEN_FILL, AQUA)
 
     column(ax, 70, w, h, [
-        "Poll power, memory &\nNVLink every 1.5 s",
+        "Poll power, DRAM &\nNVLink every 1.5 s",
         "Detect workload\nstart / end",
-        "Accumulate net energy\n+ memory traffic\nover the session",
+        "Accumulate energy\n& traffic over\nthe session",
         "Estimate FLOPs with\nequation (1)",
     ], BLUE_FILL, BLUE)
 
     # bridge between containers (mid height)
     bridge = box(ax, 43.5, 50, 15, 15, "Freeze the\nconstants into\nequation (1)",
-                 NEUTRAL_FILL, BASE, fs=8.6, weight="bold", tcol=INK2)
+                 NEUTRAL_FILL, BASE, fs=12.5, weight="bold", tcol=INK2)
     arrow(ax, (32, 50), bridge["l"])          # calibration container -> bridge
     arrow(ax, bridge["r"], (56.5, 50))        # bridge -> deployment container
 
     # deployment -> evaluation
     ev = box(ax, 92.5, 50, 13, 22,
-             "Evaluate vs\nheld-out\nground truth\n(FlopCounterMode)",
-             NEUTRAL_FILL, BASE, fs=8.2, tcol=INK2)
+             "Evaluate vs\nheld-out\nground truth",
+             NEUTRAL_FILL, BASE, fs=11.5, tcol=INK2)
     arrow(ax, (85, 50), ev["l"])
 
-    fig.savefig(os.path.join(OUT, "fig_methodology.png"), facecolor=SURFACE,
-                bbox_inches="tight", pad_inches=0.25)
+    for name in ("fig_methodology.png", "figure_1.png"):
+        fig.savefig(os.path.join(OUT, name), facecolor=SURFACE,
+                    bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
-    print("wrote writeup/fig_methodology.png")
+    print("wrote writeup/fig_methodology.png + writeup/figure_1.png")
 
 
 if __name__ == "__main__":

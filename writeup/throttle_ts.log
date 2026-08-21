@@ -1,0 +1,3 @@
+running none: /home/will/verification-games/.venv/bin/torchrun --nproc_per_node=2 /home/will/verification-games/red_team/adversarial_workload.py --strategy none --steps 220 --batch-size 8 --seq-len 256 --d-model 512 --num-layers 6 --nhead 8 --dim-feedforward 2048 --precision fp16
+running throttle: /home/will/verification-games/.venv/bin/torchrun --nproc_per_node=2 /home/will/verification-games/red_team/adversarial_workload.py --strategy throttle --steps 220 --batch-size 8 --seq-len 256 --d-model 512 --num-layers 6 --nhead 8 --dim-feedforward 2048 --precision fp16 --target-util 60
+wrote /home/will/verification-games/writeup/throttle_ts.json  (273 samples)

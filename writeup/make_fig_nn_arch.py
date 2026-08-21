@@ -1,147 +1,127 @@
 #!/usr/bin/env python3
-"""make_fig_nn_arch.py — node diagram of the two neural FLOP estimators
-(nn_estimator.py): labeled input features -> 32 -> 32 hidden units -> output,
-plus the residual variant's physics backbone. Style matches the other writeup
-figures. Writes writeup/fig_nn_arch.png.
+"""
+make_fig_nn_arch.py — Figure 9: architecture of the two neural estimators.
+  Left  — Pure MLP: log(TFLOPs) straight from log/ratio sensor features.
+  Right — Residual MLP: TFLOPs = est_2param(physics) × exp(g(z)); the net only
+          learns the efficiency correction from dimensionless intensity features.
+
+    python3 writeup/make_fig_nn_arch.py   ->   writeup/fig_nn_arch.png
 """
 import os
-
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
+from matplotlib.patches import FancyBboxPatch, Circle, FancyArrowPatch
 
 OUT = os.path.dirname(os.path.abspath(__file__))
 SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
 GRID, BASE, BLUE, AQUA, AMBER, RED, PURPLE = ("#e1e0d9", "#c3c2b7", "#2a78d6",
                                               "#1baf7a", "#e69f00", "#d1495b", "#7b5cd6")
-plt.rcParams.update({
-    "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"],
-    "text.color": INK, "figure.facecolor": SURFACE, "savefig.facecolor": SURFACE,
-    "font.size": 9,
-})
-
-EDGE = "#deddd5"
-
-PURE_FEATS = [r"$\log E$", r"$\log t$", r"$\log TB$", r"$\log NV$",
-              r"$\log P$", r"$\log(E/TB)$", r"$\log(NV/TB)$"]
-RESID_FEATS = [r"$\log P$", r"$\log(E/TB)$", r"$\log(NV/TB)$",
-               r"$\log(TB/t)$", r"$\log(NV/t)$", r"$\log t$"]
+plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"]})
 
 
-def hidden_ys(lo=0.14, hi=0.86, n=8):
-    """8 drawn nodes standing in for 32: 4 above and 4 below an ellipsis."""
-    ys = list(np.linspace(hi, lo, n))
-    mid = (ys[3] + ys[4]) / 2.0
-    return ys, mid
+def layer(ax, x, ys, r=0.9, fc="#ffffff", ec=BLUE):
+    for y in ys:
+        ax.add_patch(Circle((x, y), r, facecolor=fc, edgecolor=ec, lw=1.3, zorder=4))
+    return [(x, y) for y in ys]
 
 
-def draw_net(ax, feats, color, out_label, title, subtitle):
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
-    x_in, x_h1, x_h2, x_out = 0.30, 0.52, 0.70, 0.88
-    r_in, r_h, r_out = 0.014, 0.013, 0.020
+def connect(ax, a, b, col=BASE, alpha=0.5):
+    for (x0, y0) in a:
+        for (x1, y1) in b:
+            ax.plot([x0, y0 * 0 + x0 + 0.9, x1 - 0.9, x1][::1], [y0, y0, y1, y1][::1],
+                    color=col, lw=0.5, alpha=alpha, zorder=1)
 
-    in_ys = list(np.linspace(0.83, 0.17, len(feats)))
-    h1_ys, h1_mid = hidden_ys()
-    h2_ys, h2_mid = hidden_ys()
-    out_y = 0.50
 
-    # edges first (recessive)
-    for y0 in in_ys:
-        for y1 in h1_ys:
-            ax.plot([x_in, x_h1], [y0, y1], color=EDGE, lw=0.45, zorder=1)
-    for y0 in h1_ys:
-        for y1 in h2_ys:
-            ax.plot([x_h1, x_h2], [y0, y1], color=EDGE, lw=0.45, zorder=1)
-    for y0 in h2_ys:
-        ax.plot([x_h2, x_out], [y0, out_y], color=EDGE, lw=0.45, zorder=1)
+def simple_edges(ax, a, b, col=BASE, alpha=0.45):
+    for (x0, y0) in a:
+        for (x1, y1) in b:
+            ax.plot([x0 + 0.9, x1 - 0.9], [y0, y1], color=col, lw=0.5, alpha=alpha, zorder=1)
 
-    # input nodes + feature labels
-    for y, f in zip(in_ys, feats):
-        ax.add_patch(Circle((x_in, y), r_in, facecolor=SURFACE, edgecolor=INK2,
-                            lw=1.0, zorder=3))
-        ax.text(x_in - 0.035, y, f, ha="right", va="center", fontsize=8.2,
-                color=INK2, zorder=3)
 
-    # hidden nodes with ellipsis
-    for x, ys, mid in ((x_h1, h1_ys, h1_mid), (x_h2, h2_ys, h2_mid)):
-        for y in ys:
-            ax.add_patch(Circle((x, y), r_h, facecolor=color, edgecolor="none",
-                                alpha=0.85, zorder=3))
-        ax.text(x, mid, "⋮", ha="center", va="center", fontsize=11,
-                color=INK2, zorder=4,
-                bbox=dict(boxstyle="round,pad=0.08", fc=SURFACE, ec="none"))
+def hidden_ys(n_show, cy, gap=1.9):
+    ys = [cy + (i - (n_show - 1) / 2) * gap for i in range(n_show)]
+    return ys
 
-    # output node
-    ax.add_patch(Circle((x_out, out_y), r_out, facecolor=INK2, edgecolor="none",
-                        zorder=3))
-    ax.text(x_out, out_y - 0.065, out_label, ha="center", va="top",
-            fontsize=8.4, color=INK, zorder=3)
 
-    # layer captions
-    cap_y = 0.935
-    ax.text(x_in, cap_y, f"input\n{len(feats)} features", ha="center", va="center",
-            fontsize=8.0, color=MUTED, linespacing=1.25)
-    ax.text((x_h1 + x_h2) / 2, cap_y, "2 hidden layers · 32 units each\nReLU · dropout 0.1",
-            ha="center", va="center", fontsize=8.0, color=MUTED, linespacing=1.25)
-    ax.text(x_out, cap_y, "output\n1 unit (linear)", ha="center", va="center",
-            fontsize=8.0, color=MUTED, linespacing=1.25)
+def pure_panel(ax):
+    ax.set_title("Pure MLP", fontsize=17, color=INK, loc="left", weight="bold")
+    feats = ["log E", "log t", "log D", "log N", "log P", "log E/D", "log N/D"]
+    iy = hidden_ys(len(feats), 0, gap=2.0)
+    inp = layer(ax, 0, iy, ec=BLUE)
+    for (x, y), t in zip(inp, feats):
+        ax.text(x - 1.4, y, t, ha="right", va="center", fontsize=11.5, color=INK2,
+                family="monospace")
+    h1 = layer(ax, 7, hidden_ys(5, 0), ec=PURPLE)
+    h2 = layer(ax, 13, hidden_ys(5, 0), ec=PURPLE)
+    out = layer(ax, 19, [0], r=1.0, ec=AMBER)
+    simple_edges(ax, inp, h1); simple_edges(ax, h1, h2); simple_edges(ax, h2, out)
+    ax.text(7, 6.4, "hidden ×32\nReLU", ha="center", fontsize=11, color=PURPLE)
+    ax.text(13, 6.4, "hidden ×32\nReLU", ha="center", fontsize=11, color=PURPLE)
+    ax.text(19, 2.2, "log T̂", ha="center", fontsize=12, color=AMBER, weight="bold")
+    ax.annotate("", xy=(23, 0), xytext=(20, 0),
+                arrowprops=dict(arrowstyle="-|>", color=INK2, lw=1.6))
+    ax.text(23.4, 0, "exp(·)\n→ TFLOPs", ha="left", va="center", fontsize=11.5, color=INK)
+    ax.text(0, -9.6, "7 log/ratio features of the\nsession sensor totals",
+            ha="center", fontsize=10.5, color=MUTED)
+    ax.set_xlim(-6.5, 28); ax.set_ylim(-11.2, 8.6)
 
-    ax.set_title(title, loc="left", fontsize=9.4, color=INK, pad=14)
-    ax.text(0.0, 1.015, subtitle, transform=ax.transAxes, fontsize=8.0,
-            color=MUTED, va="bottom")
-    return x_out, out_y
+
+def resid_panel(ax):
+    ax.set_title("Residual MLP  (physics-anchored)", fontsize=17, color=INK,
+                 loc="left", weight="bold")
+    feats = ["log P", "log E/D", "log N/D", "log D/t", "log N/t", "log t"]
+    iy = hidden_ys(len(feats), 1.5, gap=1.9)
+    inp = layer(ax, 0, iy, ec=BLUE)
+    for (x, y), t in zip(inp, feats):
+        ax.text(x - 1.4, y, t, ha="right", va="center", fontsize=11.5, color=INK2,
+                family="monospace")
+    h1 = layer(ax, 6.5, hidden_ys(4, 1.5), ec=PURPLE)
+    h2 = layer(ax, 12, hidden_ys(4, 1.5), ec=PURPLE)
+    gout = layer(ax, 17, [1.5], r=1.0, ec=PURPLE)
+    simple_edges(ax, inp, h1); simple_edges(ax, h1, h2); simple_edges(ax, h2, gout)
+    ax.text(6.2, 6.2, "hidden ×32", ha="center", fontsize=11, color=PURPLE)
+    ax.text(12.4, 6.2, "hidden ×32", ha="center", fontsize=11, color=PURPLE)
+    ax.text(17, 3.3, "g(z)", ha="center", fontsize=12.5, color=PURPLE, weight="bold")
+
+    # physics branch
+    ax.add_patch(FancyBboxPatch((-3.5, -8.6), 15.6, 3.0, boxstyle="round,pad=0.3,rounding_size=0.6",
+                                facecolor="#eef6f2", edgecolor=AQUA, lw=1.3, zorder=3))
+    ax.text(4.3, -7.1, "physics est:  (E − p·t) / a", ha="center", va="center",
+            fontsize=11, color=AQUA, family="monospace")
+
+    # combine node
+    cx, cy = 21.5, -2.0
+    ax.add_patch(Circle((cx, cy), 1.15, facecolor="#fff", edgecolor=INK, lw=1.5, zorder=5))
+    ax.text(cx, cy, "×", ha="center", va="center", fontsize=19, color=INK, zorder=6)
+    ax.annotate("", xy=(cx - 0.9, cy + 0.7), xytext=(17, 1.5),
+                arrowprops=dict(arrowstyle="-|>", color=PURPLE, lw=1.5,
+                                connectionstyle="arc3,rad=-0.15"))
+    ax.text(17.4, -1.0, "exp(g(z))", ha="center", fontsize=10.5, color=PURPLE)
+    ax.annotate("", xy=(cx - 0.9, cy - 0.6), xytext=(12.3, -7.1),
+                arrowprops=dict(arrowstyle="-|>", color=AQUA, lw=1.5,
+                                connectionstyle="arc3,rad=0.15"))
+    ax.annotate("", xy=(cx + 2.8, cy), xytext=(cx + 1.2, cy),
+                arrowprops=dict(arrowstyle="-|>", color=INK2, lw=1.7))
+    ax.text(cx + 3.1, cy, "TFLOPs", ha="left", va="center", fontsize=12.5, color=INK, weight="bold")
+    ax.text(4, -11.6, "the net learns only the efficiency correction;\n"
+            "g(z)=0 recovers the physics estimate", ha="center", fontsize=10.5, color=MUTED)
+    ax.set_xlim(-6.5, 28); ax.set_ylim(-13.0, 8.6)
 
 
 def main():
-    fig, axes = plt.subplots(1, 2, figsize=(10.6, 5.0), dpi=200)
-    fig.subplots_adjust(left=0.01, right=0.99, top=0.845, bottom=0.05, wspace=0.06)
-
-    # ── Pure MLP ────────────────────────────────────────────────────────────
-    ax = axes[0]
-    draw_net(ax, PURE_FEATS, PURPLE, r"$\log\,$TFLOPs",
-             "Pure MLP — predicts log(TFLOPs) directly",
-             "absolute log-features: sizes E, t, TB, NV plus power & intensity ratios")
-    ax.text(0.5, 0.015,
-            r"TFLOPs $= \exp(\,\mathrm{MLP}(x)\,)$"
-            "\nfeatures z-scored on the training fold; target log-standardized",
-            ha="center", va="bottom", fontsize=8.2, color=INK2, linespacing=1.4)
-
-    # ── Residual MLP ───────────────────────────────────────────────────────
-    ax = axes[1]
-    draw_net(ax, RESID_FEATS, AQUA, r"$g(z)$",
-             "Residual MLP — physics-anchored correction",
-             "dimensionless intensity ratios only (no job-size features)")
-    # backbone box feeding the final multiply
-    bb = FancyBboxPatch((0.20, 0.028), 0.44, 0.075,
-                        boxstyle="round,pad=0.012", fc=SURFACE, ec=BLUE, lw=1.1,
-                        zorder=3)
-    ax.add_patch(bb)
-    ax.text(0.42, 0.0655, "2-param physics backbone\n"
-            r"est$_{2p} = (E - P_{oh}\,t)\,/\,E_{marg}$",
-            ha="center", va="center", fontsize=8.0, color=INK2, linespacing=1.3,
-            zorder=4)
-    ax.text(0.71, 0.0655,
-            r"TFLOPs $=$ est$_{2p}\cdot e^{\,g(z)}$",
-            ha="left", va="center", fontsize=8.6, color=INK, zorder=4)
-    ax.add_patch(FancyArrowPatch((0.648, 0.0655), (0.695, 0.0655),
-                                 arrowstyle="-|>", mutation_scale=9,
-                                 color=INK2, lw=1.0, zorder=4))
-    ax.add_patch(FancyArrowPatch((0.89, 0.42), (0.85, 0.125),
-                                 arrowstyle="-|>", mutation_scale=9,
-                                 color=INK2, lw=1.0, zorder=4,
-                                 connectionstyle="arc3,rad=-0.15"))
-    ax.text(0.845, 0.285, r"$g\!=\!0 \Rightarrow$ pure physics" "\nestimate",
-            ha="right", va="center", fontsize=7.6, color=MUTED, linespacing=1.25)
-
-    fig.suptitle("Neural FLOP estimator architecture — MLP(d_in, 32, 32, 1) over "
-                 "log/ratio features of the sensor aggregates (E, t, DRAM, NVLink)",
-                 fontsize=9.6, color=INK, y=0.975)
-    path = os.path.join(OUT, "fig_nn_arch.png")
-    fig.savefig(path)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.6), dpi=200)
+    fig.patch.set_facecolor(SURFACE)
+    for ax in axes:
+        ax.set_facecolor(SURFACE); ax.axis("off"); ax.set_aspect("equal")
+    pure_panel(axes[0]); resid_panel(axes[1])
+    fig.tight_layout()
+    for name in ("fig_nn_arch.png", "figure_4.png"):
+        fig.savefig(os.path.join(OUT, name), facecolor=SURFACE,
+                    bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
-    print(f"wrote {path}")
+    print("wrote writeup/fig_nn_arch.png")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,40 @@
+%% Mermaid source for the methodology overview (report Figure 1).
+%% Matches the regenerated writeup/figure_1.png (make_fig_methodology.py) — the
+%% Jetson-era "calibrate memory-traffic scale" step is gone (on the V100 setup the
+%% DCGM duty cycle is converted at fixed HBM2 peak bandwidth; scale error is
+%% absorbed into the fitted E_PER_TB), and NVLink appears in both phases.
+%% Renders on artifacts/GitHub via a ```mermaid fence, or `mmdc -i fig_methodology.mmd`.
+
+flowchart LR
+    subgraph CAL["CALIBRATION &nbsp;·&nbsp; run once"]
+        direction TB
+        C1["Measure idle<br/>power baseline"]
+        C2["Run 91-config sweep;<br/>keep 88 above the<br/>80% frontier gate"]
+        C3["Record energy, DRAM<br/>& NVLink bytes<br/>per workload"]
+        C4["Fit energy constants<br/>vs ground truth"]
+        C1 --> C2 --> C3 --> C4
+    end
+
+    FREEZE["<b>Freeze the<br/>constants into<br/>equation (1)</b>"]
+
+    subgraph DEP["DEPLOYMENT &nbsp;·&nbsp; per workload"]
+        direction TB
+        D1["Poll power, DRAM &<br/>NVLink every 1.5 s"]
+        D2["Detect workload<br/>start / end"]
+        D3["Accumulate energy<br/>& traffic over<br/>the session"]
+        D4["Estimate FLOPs with<br/>equation (1)"]
+        D1 --> D2 --> D3 --> D4
+    end
+
+    EVAL["Evaluate vs<br/>held-out<br/>ground truth"]
+
+    CAL --> FREEZE --> DEP --> EVAL
+
+    classDef calib fill:#e9f7ef,stroke:#27ae60,stroke-width:2px,color:#1a1a1a;
+    classDef deploy fill:#e8f0fc,stroke:#2f6fd6,stroke-width:2px,color:#1a1a1a;
+    classDef grey fill:#efefeb,stroke:#b0b0aa,stroke-width:2px,color:#1a1a1a;
+    class C1,C2,C3,C4 calib;
+    class D1,D2,D3,D4 deploy;
+    class FREEZE,EVAL grey;
+    style CAL fill:#fdfdf8,stroke:#222,stroke-width:2px;
+    style DEP fill:#fdfdf8,stroke:#222,stroke-width:2px;
