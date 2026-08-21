@@ -16,8 +16,8 @@ from matplotlib.patches import FancyBboxPatch, Circle, FancyArrowPatch
 
 OUT = os.path.dirname(os.path.abspath(__file__))
 SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
-GRID, BASE, BLUE, AQUA, AMBER, RED, PURPLE = ("#e1e0d9", "#c3c2b7", "#2a78d6",
-                                              "#1baf7a", "#e69f00", "#d1495b", "#7b5cd6")
+GRID, BASE, BLUE, AQUA, AMBER, RED, PURPLE = ("#e1e0d9", "#c3c2b7", "#7b9fd4",
+                                              "#7fbfa4", "#e3bc70", "#d29393", "#a795d4")
 plt.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"]})
 
 
@@ -57,19 +57,17 @@ def pure_panel(ax):
     h2 = layer(ax, 13, hidden_ys(5, 0), ec=PURPLE)
     out = layer(ax, 19, [0], r=1.0, ec=AMBER)
     simple_edges(ax, inp, h1); simple_edges(ax, h1, h2); simple_edges(ax, h2, out)
-    ax.text(7, 6.4, "hidden ×32\nReLU", ha="center", fontsize=11, color=PURPLE)
-    ax.text(13, 6.4, "hidden ×32\nReLU", ha="center", fontsize=11, color=PURPLE)
+    ax.text(6.4, 6.4, "hidden ×32\nReLU", ha="center", fontsize=11, color=PURPLE)
+    ax.text(13.6, 6.4, "hidden ×32\nReLU", ha="center", fontsize=11, color=PURPLE)
     ax.text(19, 2.2, "log T̂", ha="center", fontsize=12, color=AMBER, weight="bold")
     ax.annotate("", xy=(23, 0), xytext=(20, 0),
                 arrowprops=dict(arrowstyle="-|>", color=INK2, lw=1.6))
-    ax.text(23.4, 0, "exp(·)\n→ TFLOPs", ha="left", va="center", fontsize=11.5, color=INK)
-    ax.text(0, -9.6, "7 log/ratio features of the\nsession sensor totals",
-            ha="center", fontsize=10.5, color=MUTED)
-    ax.set_xlim(-6.5, 28); ax.set_ylim(-11.2, 8.6)
+    ax.text(23.4, 0, "exp(·) → TFLOPs", ha="left", va="center", fontsize=11.5, color=INK)
+    ax.set_xlim(-6.5, 31.5); ax.set_ylim(-8.6, 8.6)
 
 
 def resid_panel(ax):
-    ax.set_title("Residual MLP  (physics-anchored)", fontsize=17, color=INK,
+    ax.set_title("Residual MLP", fontsize=17, color=INK,
                  loc="left", weight="bold")
     feats = ["log P", "log E/D", "log N/D", "log D/t", "log N/t", "log t"]
     iy = hidden_ys(len(feats), 1.5, gap=1.9)
@@ -86,9 +84,9 @@ def resid_panel(ax):
     ax.text(17, 3.3, "g(z)", ha="center", fontsize=12.5, color=PURPLE, weight="bold")
 
     # physics branch
-    ax.add_patch(FancyBboxPatch((-3.5, -8.6), 15.6, 3.0, boxstyle="round,pad=0.3,rounding_size=0.6",
+    ax.add_patch(FancyBboxPatch((-4.8, -8.6), 20.4, 3.0, boxstyle="round,pad=0.3,rounding_size=0.6",
                                 facecolor="#eef6f2", edgecolor=AQUA, lw=1.3, zorder=3))
-    ax.text(4.3, -7.1, "physics est:  (E − p·t) / a", ha="center", va="center",
+    ax.text(5.4, -7.1, "power-only estimator:  (E − p·t) / a", ha="center", va="center",
             fontsize=11, color=AQUA, family="monospace")
 
     # combine node
@@ -99,15 +97,13 @@ def resid_panel(ax):
                 arrowprops=dict(arrowstyle="-|>", color=PURPLE, lw=1.5,
                                 connectionstyle="arc3,rad=-0.15"))
     ax.text(17.4, -1.0, "exp(g(z))", ha="center", fontsize=10.5, color=PURPLE)
-    ax.annotate("", xy=(cx - 0.9, cy - 0.6), xytext=(12.3, -7.1),
+    ax.annotate("", xy=(cx - 0.9, cy - 0.6), xytext=(15.8, -7.1),
                 arrowprops=dict(arrowstyle="-|>", color=AQUA, lw=1.5,
                                 connectionstyle="arc3,rad=0.15"))
     ax.annotate("", xy=(cx + 2.8, cy), xytext=(cx + 1.2, cy),
                 arrowprops=dict(arrowstyle="-|>", color=INK2, lw=1.7))
     ax.text(cx + 3.1, cy, "TFLOPs", ha="left", va="center", fontsize=12.5, color=INK, weight="bold")
-    ax.text(4, -11.6, "the net learns only the efficiency correction;\n"
-            "g(z)=0 recovers the physics estimate", ha="center", fontsize=10.5, color=MUTED)
-    ax.set_xlim(-6.5, 28); ax.set_ylim(-13.0, 8.6)
+    ax.set_xlim(-6.5, 28); ax.set_ylim(-10.4, 8.6)
 
 
 def main():

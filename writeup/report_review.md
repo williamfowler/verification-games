@@ -1,8 +1,9 @@
 # SRF Final Report — figure captions, figure updates, references, and factual review
 
 Prepared against `Will Fowler - SRF Final Report(4).docx` (the version with 9 figures and 2 tables).
-Figure numbers below are the **document's** numbers; the file each one comes from is noted since the
-PNG filenames don't match the doc numbering.
+Figure numbers below are the **document's** numbers. The PNG files in `writeup/` have been renamed
+to match (`figure_N.png` = doc Figure N); the four unused figures moved to `writeup/old_figures/`
+under descriptive names (fig_mlp_vs_benign, fig_throttle_time, fig_s4_bytes, fig_s5_power_time).
 
 ---
 
@@ -28,38 +29,40 @@ as the only input (median error 12.9%). Right: power + DRAM (15.1%, indistinguis
 full 3-input estimator). Dropping the memory and interconnect terms makes the estimator more
 accurate, not less.*
 
-**Figure 4** (`figure_10.png`) — *The two MLP estimators. Left — pure MLP: seven log-scale
+**Figure 4** (`figure_4.png`) — *The two MLP estimators. Left — pure MLP: seven log-scale
 features of the session totals (net energy E, duration t, DRAM terabytes D, NVLink terabytes N,
 average power P = E/t, and the ratios E/D and N/D) pass through two 32-unit ReLU hidden layers to
 predict log TFLOPs directly. Right — residual MLP: the same signals enter as dimensionless
 intensity ratios z, and the network learns only a multiplicative efficiency correction exp(g(z))
 applied to the power-only linear estimate; g(z) = 0 exactly recovers the linear estimator.*
 
-**Figure 5** (`figure_12.png`) — *Held-out estimate vs ground truth for the two MLPs under
+**Figure 5** (`figure_5.png`) — *Held-out estimate vs ground truth for the two MLPs under
 5-repeat × 5-fold cross-validation (identical folds for both). Each dot is the median held-out
 estimate for one of the 88 workloads. Both variants reach 10.4% median absolute error.*
 
-**Figure 6** (`figure_11.png`) — *Median held-out error of all five estimator configurations,
-evaluated on identical held-out folds (5 × 5-fold CV): power-only linear 13.1%, power+DRAM and
-power+DRAM+NVLink 14.9%, and 10.4% for both MLPs. (The 12.9%/15.1% figures quoted in the text come
+**Figure 6** (`figure_6.png`) — *Median held-out error of all five estimator configurations,
+evaluated on identical held-out folds (5 × 5-fold CV): 1-input (power only) 13.1%, 2-input
+(power+DRAM) and 3-input (power+DRAM+NVLink) 14.9%, and 10.4% for both MLPs. (The 12.9%/15.1% figures quoted in the text come
 from the 200-random-split protocol of Figures 2–3; this chart's matched-folds protocol shifts the
 linear numbers slightly but preserves the ranking.)*
 
-**Figure 7** (`figure_13.png`) — *Change in signed error going from benign workloads to each
-strategy's strongest attack setting (S3: n_head = 1; S4: batch 128; S5: 250 W cap), in percentage
-points; more negative = pushed further toward under-reporting. The MLP is the most accurate
-estimator on benign runs but the most gameable: the S3/S4 attacks move it 30–36 pp, roughly 3–6×
-the movement of the linear estimators. Power capping moves no estimator.*
+**Figure 7** (`figure_7.png`) — *Change in signed error going from benign workloads to each
+strategy's strongest attack setting (atypical heads: n_head = 1; larger batch: 128; power cap:
+250 W), in percentage points; more negative = pushed further toward under-reporting. 1-input =
+power only; 3-input = power + DRAM + NVLink; MLP = the residual MLP. The MLP is the most accurate
+estimator on benign runs but the most gameable: the head-count and batch attacks move it 30–36 pp,
+roughly 3–6× the movement of the linear estimators. Power capping moves no estimator.*
 
-**Figure 8** (`figure_5.png`) — *How the monitoring daemon attributed the S1 (splitting) and S2
+**Figure 8** (`figure_8.png`) — *How the monitoring daemon attributed the S1 (splitting) and S2
 (throttling) runs of one identical workload, next to a benign control. Each bar is one detected
 session. S1's 6-second pauses outlast the daemon's stop window (three quiet 1.5 s polls), so a
 single training run is logged as four separate, unlinked jobs. S2's micro-sleeps are shorter than
 one poll interval, so the run is still detected — and estimated — as a single session.*
 
-**Figure 9** (`figure_7.png`) — *Signed estimation error for every S3 (atypical attention heads),
+**Figure 9** (`figure_9.png`) — *Signed estimation error for every S3 (atypical attention heads),
 S4 (batch inflation), and S5 (power cap) configuration, under each of the three frozen estimators.
-The grey band is the range of signed errors observed on benign held-out workloads. Batch inflation
+The grey band is the middle 50% (25th–75th percentile) of the 3-input estimator's signed errors
+on benign held-out workloads. Batch inflation
 drives all three estimators progressively below truth as batch size grows past the calibration
 range (to −41% for the MLP at batch 128); atypical head counts push the MLP far out of band at
 small n_head and produce over-reporting at n_head = 64; power capping leaves every estimator inside

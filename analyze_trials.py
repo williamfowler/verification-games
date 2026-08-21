@@ -54,7 +54,7 @@ OUT = os.path.join(REPO, "writeup")
 
 # Report palette (matches make_figs_ddp.py) + one CVD-safe categorical hue.
 SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
-GRID, BASE, BLUE, AQUA, AMBER = "#e1e0d9", "#c3c2b7", "#2a78d6", "#1baf7a", "#e69f00"
+GRID, BASE, BLUE, AQUA, AMBER = "#e1e0d9", "#c3c2b7", "#7b9fd4", "#7fbfa4", "#e3bc70"
 plt.rcParams.update({
     "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"],
     "text.color": INK, "axes.edgecolor": BASE, "axes.labelcolor": INK2,
@@ -223,12 +223,12 @@ def make_figs(pooled, lab_median, lab_est, gt_by_label, summary, n_splits, n_tri
                     linewidth=0, label="±10%")
     ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
     ax.scatter(gt, est, s=34, color=AMBER, zorder=4, linewidths=0,
-               label="one workload (median)")
+               label="workload")
     ax.set_xlim(lim); ax.set_ylim(lim); ax.set_aspect("equal")
-    ax.set_xlabel("Ground-truth TFLOPs")
+    ax.set_xlabel("Ground-Truth TFLOPs")
     ax.set_ylabel("Estimated TFLOPs")
     ax.legend(fontsize=12, frameon=False, loc="upper left")
-    ax.set_title(f"3-input estimator \u00b7 median error {overall:.1f}%",
+    ax.set_title(f"3-Input Estimator - Median Error {overall:.1f}%",
                  fontsize=14.5, color=INK, loc="left", pad=10)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "fig_trials_cv_error.png"))
@@ -282,7 +282,7 @@ def make_figs(pooled, lab_median, lab_est, gt_by_label, summary, n_splits, n_tri
     # ── Fig 4 (ablation scatter): held-out est vs true TFLOPs for the 2- & 3-param
     #    estimators (power-only, power+DRAM) — same style as Fig 1, one panel each.
     if est_by_variant_median is not None:
-        panels = [("s1", "Power only", BLUE),
+        panels = [("s1", "Power Only", BLUE),
                   ("s2", "Power + DRAM", AQUA)]
         # Shared limits across both panels (start at 0).
         vmax = 0.0
@@ -303,12 +303,12 @@ def make_figs(pooled, lab_median, lab_est, gt_by_label, summary, n_splits, n_tri
                             linewidth=0, label="±10%")
             ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
             ax.scatter(gt, est, s=34, color=color, zorder=4, linewidths=0,
-                       label="one workload (median)")
+                       label="workload")
             ax.set_xlim(lim); ax.set_ylim(lim); ax.set_aspect("equal")
-            ax.set_xlabel("Ground-truth TFLOPs")
+            ax.set_xlabel("Ground-Truth TFLOPs")
             ax.set_ylabel("Estimated TFLOPs")
             ax.legend(fontsize=12, frameon=False, loc="upper left")
-            ax.set_title(f"{title} \u00b7 median error {summary[key]['median']:.1f}%",
+            ax.set_title(f"{title} - Median Error {summary[key]['median']:.1f}%",
                          fontsize=14.5, color=INK, loc="left", pad=10)
         fig.tight_layout()
         fig.savefig(os.path.join(OUT, "fig_trials_cv_error_ablation.png"))

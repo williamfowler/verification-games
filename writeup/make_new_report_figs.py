@@ -19,8 +19,8 @@ import matplotlib.pyplot as plt
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "writeup")
 SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
-GRID, BASE, BLUE, AQUA, AMBER, RED, PURPLE = ("#e1e0d9", "#c3c2b7", "#2a78d6",
-                                              "#1baf7a", "#e69f00", "#d1495b", "#7b5cd6")
+GRID, BASE, BLUE, AQUA, AMBER, RED, PURPLE = ("#e1e0d9", "#c3c2b7", "#7b9fd4",
+                                              "#7fbfa4", "#e3bc70", "#d29393", "#a795d4")
 plt.rcParams.update({
     "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"],
     "text.color": INK, "axes.edgecolor": BASE, "axes.labelcolor": INK2,
@@ -165,24 +165,30 @@ def fig_estimator_comparison():
     (frozen estimators scored on the GT-preserving red records). MLP = residual
     (physics-anchored, the recommended one); the pure MLP is fooled even harder."""
     d = json.load(open(os.path.join(REPO, "redteam_nn_scores.json")))
-    b4 = d["bands"]["b4"]
+    # benign band = middle 50% (25th-75th pct) of the 4-param estimator's signed
+    # errors on the benign held-out workloads (was min/max before).
+    nn = json.load(open(os.path.join(REPO, "nn_estimator_results.json")))
+    _gt = nn["gt"]; _e4 = nn["per_label_median_est"]["4-param"]
+    _errs = [(_e4[l] - _gt[l]) / _gt[l] * 100 for l in _e4 if l in _gt]
+    band_lo, band_hi = np.percentile(_errs, [25, 75])
     # (group, key, title, xlabel, x-axis type). x_type: 'log2' or 'lin_inv' (cap: stock left)
-    panels = [("S3_atypical", "nhead", "S3 atypical nhead",
-               "nhead", "log2"),
-              ("S4_batch", "batch", "S4 batch-inflation",
-               "batch size", "log2"),
-              ("S5_powercap", "cap_W", "S5 power-cap",
-               "power cap (W)", "lin_inv")]
-    series = [("err_2p", BLUE, "s", "2-param (power only)"),
-              ("err_4p", AMBER, "D", "4-param (power+DRAM+NVLink)"),
-              ("err_residMLP", RED, "^", "MLP (neural)")]
+    panels = [("S3_atypical", "nhead", "Atypical n_head",
+               "n_head", "log2"),
+              ("S4_batch", "batch", "Larger Batch Sizes",
+               "Batch Size", "log2"),
+              ("S5_powercap", "cap_W", "Power Cap",
+               "Power Cap (W)", "lin_inv")]
+    series = [("err_2p", BLUE, "s", "1-input"),
+              ("err_4p", AMBER, "D", "3-input"),
+              ("err_residMLP", RED, "^", "MLP")]
 
     fig, axes = plt.subplots(1, 3, figsize=(15.5, 5.4), dpi=200)
     for i, (ax, (grp, key, title, xlab, xtype)) in enumerate(zip(axes, panels)):
         rev = (xtype == "lin_inv")
         rows = sorted(d["groups"][grp], key=lambda r: r[key], reverse=rev)
         xs = [r[key] for r in rows]
-        ax.axhspan(b4["lo"], b4["hi"], color=GRID, alpha=0.5, zorder=1, label="benign band")
+        ax.axhspan(band_lo, band_hi, color=GRID, alpha=0.5, zorder=1,
+                   label="benign error (middle 50%)")
         ax.axhline(0, color=MUTED, lw=0.8, zorder=2)
         for kk, col, mk, lab in series:
             ax.plot(xs, [r[kk] for r in rows], marker=mk, color=col, lw=1.9, ms=7,
@@ -194,11 +200,11 @@ def fig_estimator_comparison():
             ax.invert_xaxis()
         ax.set_xlabel(xlab, fontsize=13.5)
         if i == 0:
-            ax.set_ylabel("signed error (%)   ↓ = under-report", fontsize=13.5)
+            ax.set_ylabel("Signed Error (%)   ↓ = Under-Report", fontsize=13.5)
         if i == 2:
             ax.legend(fontsize=11.5, frameon=False, loc="lower left")
         ax.set_title(title, fontsize=15, color=INK, loc="left", pad=10)
-        ax.set_ylim(-48, b4["hi"] + 3)
+        ax.set_ylim(-48, 25)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "figure_9.png"))
     plt.close(fig)
@@ -272,9 +278,9 @@ def fig_error_change_bars():
     sc = json.load(open(os.path.join(REPO, "redteam_nn_scores.json")))["groups"]
     # strongest ATTACK setting per strategy = the non-parent config that under-reports
     # most (by the deployed MLP). Parents (calibration reference): batch 8 / nhead 8 / 300 W.
-    spec = [("S3_atypical", "nhead", 8, "S3 atypical\nhead_dim 1024 (nhead 1)"),
-            ("S4_batch", "batch", 8, "S4 batch-inflation\nbatch 128"),
-            ("S5_powercap", "cap_W", 300, "S5 power-cap\n250 W (strongest cap)")]
+    spec = [("S3_atypical", "nhead", 8, "Atypical Attention Heads"),
+            ("S4_batch", "batch", 8, "Larger Batch Sizes"),
+            ("S5_powercap", "cap_W", 300, "Power Cap")]
     groups = []
     delta = {nm: [] for nm, *_ in ESTS}
     for g, key, parent, lab in spec:
@@ -289,16 +295,18 @@ def fig_error_change_bars():
     for i, (nm, _lk, _k, col) in enumerate(ESTS):
         xs = x + (i - 1) * w
         bars = ax.bar(xs, delta[nm], width=w, color=col, zorder=3,
-                      label={"2-param": "2-param (power only)",
-                             "4-param": "4-param (power+DRAM+NVLink)",
-                             "MLP": "MLP (neural)"}[nm])
+                      label={"2-param": "1-input", "4-param": "3-input",
+                             "MLP": "MLP"}[nm])
         for xb, v in zip(xs, delta[nm]):
             ax.annotate(f"{v:+.0f}", (xb, v), textcoords="offset points",
                         xytext=(0, -15 if v < 0 else 5), ha="center", fontsize=13,
                         color=INK, fontweight="bold")
     ax.axhline(0, color=INK2, lw=1.0, zorder=2)
+    ax.annotate("benign baseline", xy=(len(groups) - 0.55, 0), xytext=(0, 5),
+                textcoords="offset points", ha="right", va="bottom",
+                fontsize=11.5, color=INK2)
     ax.set_xticks(x); ax.set_xticklabels([g[1] for g in groups], fontsize=13)
-    ax.set_ylabel("change in error, benign → attack (pp)\n↓ = deeper under-report", fontsize=13)
+    ax.set_ylabel("Change In Error (lower is worse)", fontsize=13)
     ax.set_ylim(min(min(v) for v in delta.values()) - 6, 6)
     ax.legend(fontsize=12, frameon=False, loc="lower left", ncol=1)
     ax.grid(axis="x", visible=False)

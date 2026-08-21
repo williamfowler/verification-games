@@ -63,8 +63,8 @@ from eval_power_monitor import (fit_active_energy_model, fit_active_energy_emc_m
 
 OUT = os.path.join(REPO, "writeup")
 SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
-GRID, BASE, BLUE, AQUA, AMBER, RED, PURPLE = ("#e1e0d9", "#c3c2b7", "#2a78d6",
-                                              "#1baf7a", "#e69f00", "#d1495b", "#7b5cd6")
+GRID, BASE, BLUE, AQUA, AMBER, RED, PURPLE = ("#e1e0d9", "#c3c2b7", "#7b9fd4",
+                                              "#7fbfa4", "#e3bc70", "#d29393", "#a795d4")
 plt.rcParams.update({
     "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"],
     "text.color": INK, "axes.edgecolor": BASE, "axes.labelcolor": INK2,
@@ -256,13 +256,14 @@ def _scatter(ax, gt, est_by_lab, name, color, sub):
     ax.fill_between(xs, xs * 0.9, xs * 1.1, color=BASE, alpha=0.5, lw=0, zorder=1, label="±10%")
     ax.plot(xs, xs, color=INK2, lw=1.0, ls=(0, (4, 3)), zorder=2)
     ax.scatter(x, y, s=34, color=color, zorder=4, linewidths=0,
-               label="one workload (median)")
+               label="workload")
     ax.set_xlim(lim); ax.set_ylim(lim); ax.set_aspect("equal")
-    ax.set_xlabel("Ground-truth TFLOPs")
-    ax.set_ylabel("Estimated TFLOPs")
-    ax.set_title(f"{name} \u00b7 median error {sub:.1f}%", fontsize=14.5, color=INK,
-                 loc="left", pad=10)
-    ax.legend(fontsize=12, frameon=False, loc="upper left")
+    ax.set_xlabel("Ground-Truth TFLOPs", fontsize=17)
+    ax.set_ylabel("Estimated TFLOPs", fontsize=17)
+    ax.tick_params(labelsize=15)
+    ax.set_title(f"{name} - Median Error {sub:.1f}%", fontsize=19, color=INK,
+                 loc="left", pad=12)
+    ax.legend(fontsize=15, frameon=False, loc="upper left")
 
 
 def make_figs(rows, est_by_lab, gt, n_workloads, repeats, folds):
@@ -282,15 +283,15 @@ def make_figs(rows, est_by_lab, gt, n_workloads, repeats, folds):
             "pure-MLP": PURPLE, "residual-MLP": RED}
     xs = np.arange(len(ESTIMATORS))
     meds = [rows[e]["median"] for e in ESTIMATORS]
+    disp = {"2-param": "1-input", "3-param": "2-input", "4-param": "3-input"}
+    names = [disp.get(e, e) for e in ESTIMATORS]
     ax.bar(xs, meds, color=[cols[e] for e in ESTIMATORS], zorder=3, width=0.66)
     for i, m in enumerate(meds):
         ax.annotate(f"{m:.1f}%", (i, m), textcoords="offset points", xytext=(0, 4),
                     ha="center", fontsize=13, color=INK, fontweight="bold")
-    best = ESTIMATORS[int(np.argmin(meds))]
-    ax.axhline(rows["2-param"]["median"], color=INK2, lw=0.8, ls=(0, (3, 3)), zorder=2)
-    ax.set_xticks(xs); ax.set_xticklabels(ESTIMATORS, fontsize=12.5)
+    ax.set_xticks(xs); ax.set_xticklabels(names, fontsize=12.5)
     ax.set_ylabel("Median held-out error  (%)")
-    ax.set_title("Estimator accuracy, identical held-out folds",
+    ax.set_title("Estimators Median Error",
                  fontsize=14.5, color=INK, loc="left", pad=10)
     ax.grid(axis="x", visible=False)
     fig.tight_layout()

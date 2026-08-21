@@ -38,8 +38,8 @@ from eval_power_monitor import load_records, valid, is_frontier
 
 OUT = os.path.join(REPO_ROOT, "writeup")
 SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
-GRID, BASE, BLUE, AMBER, RED, AQUA = ("#e1e0d9", "#c3c2b7", "#2a78d6", "#e69f00",
-                                      "#d1495b", "#1baf7a")
+GRID, BASE, BLUE, AMBER, RED, AQUA = ("#e1e0d9", "#c3c2b7", "#7b9fd4", "#e3bc70",
+                                      "#d29393", "#7fbfa4")
 plt.rcParams.update({
     "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"],
     "text.color": INK, "axes.edgecolor": BASE, "axes.labelcolor": INK2,
@@ -136,35 +136,30 @@ def fig_sessions():
         return min(np.datetime64(s["start_time"]) for s in run["sessions"])
 
     rows = [
-        ("benign\ncontrol", runs["none"], BLUE,
-         "1 workload detected"),
-        ("S1 split\n(6 s pauses)", runs["split"], RED,
-         "seen as 4 separate jobs"),
-        ("S2 throttle\n(micro-sleep)", runs["throttle"], AMBER,
-         "still 1 workload"),
+        ("Benign", runs["none"], BLUE),
+        ("Workload Splitting", runs["split"], RED),
+        ("Throttling", runs["throttle"], AMBER),
     ]
     fig, ax = plt.subplots(figsize=(11.5, 4.6), dpi=200)
     ylabels = []
-    for i, (name, run, col, note) in enumerate(rows):
+    for i, (name, run, col) in enumerate(rows):
         base = t0(run)
         for s in run["sessions"]:
             start = (np.datetime64(s["start_time"]) - base) / np.timedelta64(1, "s")
             dur = s["duration_sec"]
             ax.barh(i, dur, left=start, height=0.5, color=col, alpha=0.85,
                     edgecolor=INK, lw=0.6, zorder=3)
-        ns = run["n_sessions"]
-        ax.annotate(note,
-                    xy=(1.01, i), xycoords=("axes fraction", "data"),
-                    fontsize=13, color=col, va="center", ha="left", fontweight="bold")
         ylabels.append(name)
     ax.set_yticks(range(len(rows)))
     ax.set_yticklabels(ylabels, fontsize=13)
     ax.set_ylim(-0.6, len(rows) - 0.4)
-    ax.set_xlabel("time since workload start  (s)", fontsize=13)
+    ax.set_xlabel("Time Since Workload Start  (s)", fontsize=13)
     ax.tick_params(axis="x", labelsize=12)
     ax.set_xlim(-4, None)
+    ax.set_title("Adversarial Workloads Detected by the Monitoring Daemon",
+                 fontsize=15, color=INK, loc="left", pad=12)
     ax.grid(axis="y", visible=False)
-    fig.tight_layout(rect=(0, 0, 0.8, 1))
+    fig.tight_layout()
     fig.savefig(os.path.join(OUT, "fig_redteam_sessions.png"), bbox_inches="tight")
     fig.savefig(os.path.join(OUT, "figure_8.png"), bbox_inches="tight")
     plt.close(fig)
@@ -305,7 +300,7 @@ def fig_vs_benign(cal):
     # The daemon's raw per-session net energy is zeroed by a single-GPU baseline bug,
     # so per-session magnitude is modeled as (benign daemon rate × session work); the
     # measured result is the session count. Robust: S1 → 4 sessions, S2 → 1.
-    PURPLE = "#7b5cd6"
+    PURPLE = "#a795d4"
     none = load("red_team_old/live_none.json")
     split = load("red_team_old/live_split.json")
     thr = load("red_team_old/live_throttle.json")
